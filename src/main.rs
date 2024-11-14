@@ -1,4 +1,5 @@
 mod torrent;
+mod tracker;
 
 use tracing::info;
 use tracing_subscriber;
