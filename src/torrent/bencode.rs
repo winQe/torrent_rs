@@ -8,7 +8,7 @@ pub struct File {
     pub length: i64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct Info {
     pub name: String,
     pub pieces: ByteBuf,
@@ -23,7 +23,7 @@ pub struct Info {
     pub root_hash: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct Torrent {
     pub info: Info,
     #[serde(default)]
