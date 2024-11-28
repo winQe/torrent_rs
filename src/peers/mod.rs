@@ -14,4 +14,6 @@ enum PeerState {
 pub struct Peer {
     addr: SocketAddrV4,
     state: PeerState,
+    info_hash: String,
+    peer_id: String,
 }
