@@ -1,9 +1,9 @@
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use rand::Rng;
 use serde_derive::{Deserialize, Serialize};
 
 use crate::peers::PeerAddresses;
-use crate::torrent::bencode::Torrent;
+use crate::torrent::Torrent;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TrackerResponse {
@@ -52,7 +52,7 @@ impl TrackerRequest {
             port: 6889,
             uploaded: 0,
             downloaded: 0,
-            left: torrent.info.length.unwrap() as usize,
+            left: torrent.length(),
             compact: 1,
         })
     }
@@ -61,12 +61,13 @@ impl TrackerRequest {
         let request = Self::build_request(torrent).context("Failed to build request")?;
         let params = serde_urlencoded::to_string(&request)
             .context("Failed to encode tracker url params!")?;
+        let info_hash_urlencoded = torrent
+            .urlencode_infohash()
+            .context("Failed to urlencode infohash")?;
 
         let tracker_url = format!(
             "{}?{}&info_hash={}",
-            torrent.announce.clone().unwrap(),
-            params,
-            torrent.info.root_hash.clone().unwrap(),
+            torrent.announce, params, info_hash_urlencoded,
         );
 
         let response = reqwest::get(tracker_url)
@@ -112,7 +113,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_announce_success() -> Result<()> {
-        use crate::torrent::bencode::{Info, Torrent};
+        use crate::torrent::{Hashes, Info, Keys, Torrent};
 
         let mut mock_server = mockito::Server::new_async().await;
 
@@ -135,13 +136,16 @@ mod tests {
             .create();
 
         let torrent = Torrent {
-            announce: Some(mock_server.url() + "/announce"),
+            announce: format!("{}/announce", mock_server.url()),
             info: Info {
-                length: Some(2),
-                root_hash: Some("randomhash".to_string()),
-                ..Default::default()
+                name: "mock_torrent".to_string(),
+                piece_length: 256 * 1024, // 256 KB
+                pieces: Hashes(vec![[0u8; 20]]),
+                keys: Keys::SingleFile {
+                    length: 1024 * 1024, // 1 MB
+                },
             },
-            ..Default::default()
+            info_hash: Some([0u8; 20]), // Mock 20-byte info hash
         };
 
         let result = TrackerRequest::announce(&torrent).await;
