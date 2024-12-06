@@ -1,6 +1,11 @@
 use super::Peer;
 use anyhow::{bail, Context, Ok};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    time::timeout,
+    time::Duration,
+};
+use tracing::instrument;
 
 const PROTOCOL_IDENTIFIER_LENGTH: u8 = 19;
 const PROTOCOL_IDENTIFIER: [u8; 19] = *b"BitTorrent protocol";
@@ -16,7 +21,7 @@ struct HandshakeMessage {
 }
 
 impl HandshakeMessage {
-    fn to_bytes(&self) -> Vec<u8> {
+    fn to_bytes(self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(std::mem::size_of::<Self>());
         bytes.push(self.length);
         bytes.extend_from_slice(&self.pstr);
@@ -28,21 +33,22 @@ impl HandshakeMessage {
 }
 
 impl Peer {
-    async fn handshake(&self) -> anyhow::Result<()> {
-        if self.info_hash.as_bytes().len() != 20 {
-            bail!("Info hash has must be exactly 20 bytes long");
-        }
-
+    #[instrument]
+    pub async fn handshake(&self) -> anyhow::Result<()> {
         if self.peer_id.as_bytes().len() != 20 {
             bail!("Peer ID must be exactly 20 bytes long");
         }
 
-        let mut tcp_stream = tokio::net::TcpStream::connect(self.addr)
-            .await
-            .context("Failed to connect to TCP stream")?;
+        let mut tcp_stream = timeout(
+            Duration::from_secs(5),
+            tokio::net::TcpStream::connect(self.addr),
+        )
+        .await
+        .context("Establishing TCP stream timed out after 5s")?
+        .context("Failed to connect to TCP stream")?;
 
         let mut info_hash = [0u8; 20];
-        info_hash.copy_from_slice(self.info_hash.as_bytes());
+        info_hash.copy_from_slice(&self.info_hash);
 
         let mut peer_id = [0u8; 20];
         peer_id.copy_from_slice(self.peer_id.as_bytes());
@@ -62,9 +68,9 @@ impl Peer {
 
         // Read the response
         let mut response = vec![0u8; HANDSHAKE_MESSAGE_LENGTH];
-        tcp_stream
-            .read_exact(&mut response)
+        timeout(Duration::from_secs(5), tcp_stream.read_exact(&mut response))
             .await
+            .context("Handshake response timed out after 5s")?
             .context("Failed to read handshake response")?;
 
         // Validate the response
