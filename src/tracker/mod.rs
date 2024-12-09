@@ -1,7 +1,7 @@
 use anyhow::Context;
 use rand::Rng;
 use serde_derive::{Deserialize, Serialize};
-use tracing::instrument;
+use tracing::{info, instrument};
 
 use crate::peers::PeerAddresses;
 use crate::torrent::Torrent;
@@ -57,7 +57,7 @@ impl TrackerRequest {
             compact: 1,
         })
     }
-    #[instrument]
+    #[instrument(skip(torrent))]
     pub async fn announce(torrent: &Torrent) -> anyhow::Result<TrackerResponse> {
         let request = Self::build_request(torrent).context("Failed to build request")?;
         let params = serde_urlencoded::to_string(&request)
@@ -81,6 +81,8 @@ impl TrackerRequest {
 
         let response: TrackerResponse = serde_bencode::from_bytes(&response)
             .context("Failed to deserialize tracker response!")?;
+
+        info!("Sucesfully retrieved peers from tracker");
 
         Ok(response)
     }

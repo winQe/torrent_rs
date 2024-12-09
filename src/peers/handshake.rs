@@ -33,7 +33,8 @@ impl HandshakeMessage {
 }
 
 impl Peer {
-    #[instrument]
+    //TODO: retry mechanism with exponential backoff
+    #[instrument(skip(self))]
     pub async fn handshake(&self) -> anyhow::Result<()> {
         if self.peer_id.as_bytes().len() != 20 {
             bail!("Peer ID must be exactly 20 bytes long");
@@ -82,6 +83,7 @@ impl Peer {
             bail!("Info hash mismatch in handshake response");
         }
 
+        tracing::info!("Handshake with peer {} sucessful", self.addr);
         Ok(())
     }
 }

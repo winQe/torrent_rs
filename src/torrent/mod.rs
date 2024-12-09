@@ -1,4 +1,5 @@
 use anyhow::Context;
+use core::fmt;
 use serde_derive::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use std::path::Path;
@@ -44,14 +45,16 @@ impl Torrent {
             encoded
         })
     }
-
-    pub async fn open(file: impl AsRef<Path>) -> anyhow::Result<Self> {
+    #[tracing::instrument]
+    pub async fn open(file: impl AsRef<Path> + fmt::Debug) -> anyhow::Result<Self> {
         let file = tokio::fs::read(file)
             .await
             .context("Failed opening torrent file")?;
         let mut t: Torrent =
             serde_bencode::from_bytes(&file).context("Failed parsing torrent file")?;
         t.get_info_hash().context("Failed to get info hash")?;
+
+        tracing::info!("Succesfully opened {}", t.info.name);
         Ok(t)
     }
 

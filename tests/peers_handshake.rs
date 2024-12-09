@@ -4,12 +4,13 @@ use torrent_rs::{
     torrent::Torrent,
     tracker::{self, TrackerRequest},
 };
-use tracing_test::traced_test;
 
 #[ignore]
 #[tokio::test]
-#[traced_test]
-async fn test_peer_handshake() {
+async fn test_peer_handshake() -> anyhow::Result<()> {
+    let subscriber = tracing_subscriber::FmtSubscriber::new();
+    tracing::subscriber::set_global_default(subscriber)?;
+
     let torrent_path = PathBuf::from("example/debian-12.7.0-amd64-netinst.iso.torrent");
     let torrent = Torrent::open(torrent_path).await.unwrap();
 
@@ -34,11 +35,10 @@ async fn test_peer_handshake() {
         let res = peer.handshake().await;
         if res.is_ok() {
             successful_handshakes = true;
-            tracing::info!("Peer {:?} sucessfully handshake", address);
             break;
         } else {
-            tracing::info!("Peer {:?} failed to handshake", address);
-            tracing::info!("{}", res.unwrap_err());
+            tracing::error!("Peer {:?} failed to handshake", address);
+            tracing::error!("{}", res.unwrap_err());
         }
     }
 
@@ -46,4 +46,5 @@ async fn test_peer_handshake() {
         successful_handshakes,
         "At least one peer handshake should succeed"
     );
+    anyhow::Ok(())
 }
