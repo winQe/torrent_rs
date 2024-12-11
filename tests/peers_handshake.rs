@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use torrent_rs::{
-    peers::Peer,
+    peer::Peer,
     torrent::Torrent,
     tracker::{self, TrackerRequest},
 };

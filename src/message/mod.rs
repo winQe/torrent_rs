@@ -4,7 +4,7 @@ mod bitfield;
 mod codec;
 pub use bitfield::Bitfield;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum PeerMessage {
     KeepAlive,
     Choke,

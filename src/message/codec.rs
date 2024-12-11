@@ -1,7 +1,7 @@
 use std::io;
 
-use tokio_util::bytes::{Buf, BytesMut};
-use tokio_util::codec::Decoder;
+use tokio_util::bytes::{Buf, BufMut, BytesMut};
+use tokio_util::codec::{Decoder, Encoder};
 
 use super::PeerMessage;
 
@@ -25,17 +25,17 @@ impl Decoder for MessageCodec {
             return Ok(Some(PeerMessage::KeepAlive));
         }
 
-        // Not full frame is  received, wait for more
-        if src.len() < length {
-            return Ok(None);
-        }
-
         // DDoS Protection
-        if length > MAX_MESSAGE_SIZE {
+        if length > MAX_MESSAGE_SIZE || src.len() > MAX_MESSAGE_SIZE {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Message length exceeds maximum allowed size",
             ));
+        }
+
+        // Not full frame is  received, wait for more
+        if src.len() < length {
+            return Ok(None);
         }
 
         // ID is a single decimal byte
@@ -85,6 +85,10 @@ impl Decoder for MessageCodec {
                     length,
                 }
             }
+            9 => {
+                let port = src.get_u16();
+                PeerMessage::Port(port)
+            }
 
             _ => {
                 return Err(io::Error::new(
@@ -95,5 +99,79 @@ impl Decoder for MessageCodec {
         };
 
         Ok(Some(message))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio_util::bytes::BytesMut;
+    use tokio_util::codec::Decoder;
+
+    #[test]
+    fn test_decode_keep_alive() {
+        let mut codec = MessageCodec;
+        let mut buffer = BytesMut::from(&[0, 0, 0, 0][..]); // KeepAlive message
+        let message = codec.decode(&mut buffer).unwrap();
+        assert_eq!(message, Some(PeerMessage::KeepAlive));
+    }
+
+    #[test]
+    fn test_decode_choke() {
+        let mut codec = MessageCodec;
+        let mut buffer = BytesMut::from(&[0, 0, 0, 1, 0][..]); // Choke message
+        let message = codec.decode(&mut buffer).unwrap();
+        assert_eq!(message, Some(PeerMessage::Choke));
+    }
+
+    #[test]
+    fn test_decode_have() {
+        let mut codec = MessageCodec;
+        let mut buffer = BytesMut::from(&[0, 0, 0, 5, 4, 0, 0, 0, 42][..]); // Have(42)
+        let message = codec.decode(&mut buffer).unwrap();
+        assert_eq!(message, Some(PeerMessage::Have(42)));
+    }
+
+    #[test]
+    fn test_incomplete_buffer() {
+        let mut codec = MessageCodec;
+        let mut buffer = BytesMut::from(&[0, 0, 0, 5, 4, 0, 0][..]); // Incomplete "Have"
+        let message = codec.decode(&mut buffer).unwrap();
+        assert!(message.is_none());
+    }
+
+    #[test]
+    fn test_invalid_message_id() {
+        let mut codec = MessageCodec;
+        let mut buffer = BytesMut::from(&[0, 0, 0, 1, 99][..]); // Invalid ID 99
+        let result = codec.decode(&mut buffer);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_excessive_length() {
+        let mut codec = MessageCodec;
+        // Create a message length that exceeds MAX_MESSAGE_SIZE
+        let excessive_length = (MAX_MESSAGE_SIZE + 1) as u32;
+        let mut buffer = BytesMut::new();
+        buffer.extend_from_slice(&excessive_length.to_be_bytes());
+        buffer.extend_from_slice(&[0]);
+
+        let result = codec.decode(&mut buffer);
+        assert!(result.is_err());
+        if let Err(e) = result {
+            assert_eq!(e.to_string(), "Message length exceeds maximum allowed size");
+        }
+    }
+
+    #[test]
+    fn test_decode_bitfield() {
+        let mut codec = MessageCodec;
+        let mut buffer = BytesMut::from(&[0, 0, 0, 3, 5, 0b10101010, 0b11110000][..]);
+        let message = codec.decode(&mut buffer).unwrap();
+        assert_eq!(
+            message,
+            Some(PeerMessage::Bitfield(vec![0b10101010, 0b11110000]))
+        );
     }
 }

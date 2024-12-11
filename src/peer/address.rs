@@ -1,5 +1,5 @@
 // https://github.com/jonhoo/codecrafters-bittorrent-rust/blob/master/src/tracker.rs
-use crate::peers::PeerAddresses;
+use crate::peer::PeerAddresses;
 
 use serde::de::{self, Deserialize, Deserializer, Visitor};
 use serde::ser::{Serialize, Serializer};

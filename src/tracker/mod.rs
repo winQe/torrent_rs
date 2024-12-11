@@ -3,7 +3,7 @@ use rand::Rng;
 use serde_derive::{Deserialize, Serialize};
 use tracing::{info, instrument};
 
-use crate::peers::PeerAddresses;
+use crate::peer::PeerAddresses;
 use crate::torrent::Torrent;
 
 #[derive(Debug, Clone, Deserialize)]
