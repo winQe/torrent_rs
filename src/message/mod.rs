@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 mod bitfield;
+mod codec;
 pub use bitfield::Bitfield;
 
 #[derive(Debug)]
@@ -13,19 +14,19 @@ pub enum PeerMessage {
     Have(u32), // Fixed length, 4 bytes for piece index should be enough
     Bitfield(Vec<u8>),
     Request {
-        index: i32,
-        begin: i32,
-        length: i32,
+        index: u32,
+        begin: u32,
+        length: u32,
     },
     Piece {
-        index: i32,
-        begin: i32,
+        index: u32,
+        begin: u32,
         block: Vec<u8>,
     },
     Cancel {
-        index: i32,
-        begin: i32,
-        length: i32,
+        index: u32,
+        begin: u32,
+        length: u32,
     },
     Port(u16), // For newer versions that implements DHT, stored in 2 bytes
 }

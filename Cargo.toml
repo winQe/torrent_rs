@@ -20,6 +20,7 @@ tokio = { version = "1", features = ["full", "tracing"] }
 sha1 = "0.10.6"
 hex = "0.4.3"
 futures = "0.3.31"
+tokio-util = "0.7.13"
 
 [dev-dependencies]
 mockito = "1.2.0"
