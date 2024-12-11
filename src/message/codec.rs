@@ -102,6 +102,83 @@ impl Decoder for MessageCodec {
     }
 }
 
+impl Encoder<PeerMessage> for MessageCodec {
+    type Error = std::io::Error;
+
+    fn encode(&mut self, item: PeerMessage, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        match item {
+            PeerMessage::KeepAlive => {
+                dst.put_u32(0); // Length prefix is 0 for KeepAlive
+            }
+            PeerMessage::Choke => {
+                dst.put_u32(1);
+                dst.put_u8(0);
+            }
+            PeerMessage::Unchoke => {
+                dst.put_u32(1);
+                dst.put_u8(1);
+            }
+            PeerMessage::Interested => {
+                dst.put_u32(1);
+                dst.put_u8(2);
+            }
+            PeerMessage::NotInterested => {
+                dst.put_u32(1);
+                dst.put_u8(3);
+            }
+            PeerMessage::Have(index) => {
+                dst.put_u32(5); // Length prefix
+                dst.put_u8(4); // Message ID
+                dst.put_u32(index);
+            }
+            PeerMessage::Bitfield(bitfield) => {
+                dst.put_u32(1 + bitfield.len() as u32);
+                dst.put_u8(5);
+                dst.extend_from_slice(&bitfield);
+            }
+            PeerMessage::Request {
+                index,
+                begin,
+                length,
+            } => {
+                dst.put_u32(13); // Length prefix
+                dst.put_u8(6); // Message ID
+                dst.put_u32(index);
+                dst.put_u32(begin);
+                dst.put_u32(length);
+            }
+            PeerMessage::Piece {
+                index,
+                begin,
+                block,
+            } => {
+                dst.put_u32(9 + block.len() as u32); // Length prefix
+                dst.put_u8(7); // Message ID
+                dst.put_u32(index);
+                dst.put_u32(begin);
+                dst.extend_from_slice(&block);
+            }
+            PeerMessage::Cancel {
+                index,
+                begin,
+                length,
+            } => {
+                dst.put_u32(13); // Length prefix
+                dst.put_u8(8); // Message ID
+                dst.put_u32(index);
+                dst.put_u32(begin);
+                dst.put_u32(length);
+            }
+            PeerMessage::Port(port) => {
+                dst.put_u32(6); // Length
+                dst.put_u8(9); // Message ID
+                dst.put_u16(port);
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
