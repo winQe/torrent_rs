@@ -2,10 +2,14 @@
 use std::net::SocketAddrV4;
 
 mod address;
+mod connect;
 mod handshake;
 mod state;
 
+use crate::message::{Bitfield, MessageCodec};
 use state::PeerState;
+use tokio::net::TcpStream;
+use tokio_util::codec::Framed;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PeerAddresses(pub Vec<SocketAddrV4>);
@@ -23,6 +27,8 @@ pub struct Peer {
     state: PeerState,
     info_hash: [u8; 20],
     peer_id: String,
+    bitfield: Option<Bitfield>,
+    tcp_stream: Option<Framed<TcpStream, MessageCodec>>,
 }
 
 impl Peer {
@@ -32,6 +38,12 @@ impl Peer {
             state: PeerState::new(),
             info_hash,
             peer_id,
+            bitfield: None,
+            tcp_stream: None,
         }
+    }
+
+    pub fn bitfield(&self) -> Option<&Bitfield> {
+        self.bitfield.as_ref()
     }
 }

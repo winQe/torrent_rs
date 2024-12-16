@@ -35,7 +35,7 @@ impl HandshakeMessage {
 impl Peer {
     //TODO: retry mechanism with exponential backoff
     #[instrument(skip(self))]
-    pub async fn handshake(&self) -> anyhow::Result<()> {
+    pub async fn handshake(&self) -> anyhow::Result<tokio::net::TcpStream> {
         if self.peer_id.as_bytes().len() != 20 {
             bail!("Peer ID must be exactly 20 bytes long");
         }
@@ -84,7 +84,7 @@ impl Peer {
         }
 
         tracing::info!("Handshake with peer {} sucessful", self.addr);
-        Ok(())
+        Ok(tcp_stream)
     }
 }
 

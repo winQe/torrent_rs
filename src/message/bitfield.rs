@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct Bitfield {
     data: Vec<u8>,
 }

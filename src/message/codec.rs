@@ -7,7 +7,8 @@ use super::PeerMessage;
 
 // DDoS Protection
 const MAX_MESSAGE_SIZE: usize = 16 * 1024; // 16 MB
-struct MessageCodec;
+#[derive(Debug)]
+pub struct MessageCodec;
 
 impl Decoder for MessageCodec {
     type Item = PeerMessage;

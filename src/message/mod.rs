@@ -3,6 +3,7 @@
 mod bitfield;
 mod codec;
 pub use bitfield::Bitfield;
+pub use codec::MessageCodec;
 
 #[derive(Debug, PartialEq)]
 pub enum PeerMessage {
