@@ -1,3 +1,5 @@
+type PieceIndex = u32;
+
 #[derive(Debug)]
 pub struct Bitfield {
     data: Vec<u8>,
@@ -19,5 +21,29 @@ impl Bitfield {
 
         // Big endian bit ordering
         self.data[byte_index] & (1 << (7 - bit_index)) != 0
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len() * 8
+    }
+}
+
+struct BitfieldIterator {
+    bitfield: Bitfield,
+    index: PieceIndex,
+}
+
+impl Iterator for BitfieldIterator {
+    type Item = PieceIndex;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.index < self.bitfield.len() as u32 {
+            self.index += 1;
+
+            if self.bitfield.has_piece(self.index as usize) {
+                return Some(self.index as PieceIndex);
+            }
+        }
+        None
     }
 }
