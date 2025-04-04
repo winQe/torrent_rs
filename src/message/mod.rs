@@ -5,6 +5,8 @@ mod codec;
 pub use bitfield::Bitfield;
 pub use codec::MessageCodec;
 
+pub type PieceIndex = u32;
+
 #[derive(Debug, PartialEq)]
 pub enum PeerMessage {
     KeepAlive,

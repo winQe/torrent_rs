@@ -1,8 +1,8 @@
-type PieceIndex = u32;
+use super::PieceIndex;
 
 #[derive(Debug)]
 pub struct Bitfield {
-    data: Vec<u8>,
+    pub data: Vec<u8>,
 }
 
 impl Bitfield {
@@ -26,14 +26,21 @@ impl Bitfield {
     pub fn len(&self) -> usize {
         self.data.len() * 8
     }
+
+    pub fn iter(&self) -> BitfieldIterator {
+        BitfieldIterator {
+            bitfield: self,
+            index: 0,
+        }
+    }
 }
 
-struct BitfieldIterator {
-    bitfield: Bitfield,
+pub struct BitfieldIterator<'a> {
+    bitfield: &'a Bitfield,
     index: PieceIndex,
 }
 
-impl Iterator for BitfieldIterator {
+impl<'a> Iterator for BitfieldIterator<'a> {
     type Item = PieceIndex;
 
     fn next(&mut self) -> Option<Self::Item> {
