@@ -4,6 +4,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use crate::message::Bitfield;
 use crate::message::PieceIndex;
 
+// TODO: Make this thread safe
 #[derive(Debug)]
 pub struct PieceManager {
     // Tracks number of peers that have each piece (updated dynamically)
@@ -79,15 +80,14 @@ impl PieceManager {
     }
 
     /// Handle peer disconnection (update availability counts)
-    pub fn remove_peer(&mut self, bitfield: &HashSet<PieceIndex>) {
-        for &piece in bitfield {
-            if let Some(count) = self.piece_counts.get_mut(&piece) {
+    pub fn remove_peer(&mut self, bitfield: &Bitfield) {
+        for piece_index in bitfield.iter() {
+            if let Some(count) = self.piece_counts.get_mut(&piece_index) {
                 let old_count = *count;
                 *count = count.saturating_sub(1);
-
-                self.availability_queue.remove(&(old_count, piece));
+                self.availability_queue.remove(&(old_count, piece_index));
                 if *count > 0 {
-                    self.availability_queue.insert((*count, piece));
+                    self.availability_queue.insert((*count, piece_index));
                 }
             }
         }
