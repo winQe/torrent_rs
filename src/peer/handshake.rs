@@ -74,6 +74,7 @@ impl Peer {
             .context("Handshake response timed out after 5s")?
             .context("Failed to read handshake response")?;
 
+        // TODO: Should read the external_peer_id here from 48..68
         // Validate the response
         if response[1..20] != PROTOCOL_IDENTIFIER {
             bail!("Invalid protocol identifier in handshake response");
