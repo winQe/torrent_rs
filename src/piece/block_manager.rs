@@ -54,6 +54,46 @@ impl BlockManager {
             }
         }
     }
+
+    /// Checks if all blocks for a piece have been received.
+    pub fn is_piece_complete(&self, piece_index: PieceIndex) -> bool {
+        self.piece_blocks
+            .get(&piece_index)
+            .map(|blocks| !blocks.is_empty() && blocks.iter().all(|b| b.is_some()))
+            .unwrap_or(false)
+    }
+
+    /// Assembles all blocks of a piece into a single contiguous byte vector.
+    /// Returns None if the piece is not complete or not initialized.
+    pub fn assemble_piece(&self, piece_index: PieceIndex) -> Option<Vec<u8>> {
+        let blocks = self.piece_blocks.get(&piece_index)?;
+
+        if blocks.is_empty() || blocks.iter().any(|b| b.is_none()) {
+            return None;
+        }
+
+        let total_size: usize = blocks.iter().filter_map(|b| b.as_ref()).map(|b| b.len()).sum();
+        let mut assembled = Vec::with_capacity(total_size);
+
+        for block in blocks.iter().filter_map(|b| b.as_ref()) {
+            assembled.extend_from_slice(block);
+        }
+
+        Some(assembled)
+    }
+
+    /// Removes a piece from the manager after it has been written to disk.
+    /// This frees memory used by the block data.
+    pub fn cleanup_piece(&mut self, piece_index: PieceIndex) {
+        self.piece_blocks.remove(&piece_index);
+        // Also remove any stale pending blocks for this piece
+        self.pending_blocks.retain(|info, _| info.piece_index != piece_index);
+    }
+
+    /// Returns true if the piece has been initialized.
+    pub fn has_piece(&self, piece_index: PieceIndex) -> bool {
+        self.piece_blocks.contains_key(&piece_index)
+    }
 }
 
 #[cfg(test)]
@@ -451,5 +491,95 @@ mod tests {
 
         let no_more_blocks = manager.next_block(piece_index, piece_size);
         assert!(no_more_blocks.is_none());
+    }
+
+    #[test]
+    fn test_is_piece_complete_false_when_missing_blocks() {
+        let mut manager = BlockManager::new();
+        let piece_index = 0;
+        let piece_size = BLOCK_SIZE * 2;
+
+        manager.init_piece(piece_index, piece_size);
+        assert!(!manager.is_piece_complete(piece_index));
+
+        // Store only first block
+        let block1 = manager.next_block(piece_index, piece_size).unwrap();
+        manager.store_block(block1, create_test_block(BLOCK_SIZE as usize));
+
+        assert!(!manager.is_piece_complete(piece_index));
+    }
+
+    #[test]
+    fn test_is_piece_complete_true_when_all_blocks_stored() {
+        let mut manager = BlockManager::new();
+        let piece_index = 0;
+        let piece_size = BLOCK_SIZE * 2;
+
+        manager.init_piece(piece_index, piece_size);
+
+        // Store both blocks
+        let block1 = manager.next_block(piece_index, piece_size).unwrap();
+        manager.store_block(block1, create_test_block(BLOCK_SIZE as usize));
+
+        let block2 = manager.next_block(piece_index, piece_size).unwrap();
+        manager.store_block(block2, create_test_block(BLOCK_SIZE as usize));
+
+        assert!(manager.is_piece_complete(piece_index));
+    }
+
+    #[test]
+    fn test_assemble_piece() {
+        let mut manager = BlockManager::new();
+        let piece_index = 0;
+        let piece_size = BLOCK_SIZE + 1000; // 1 full block + partial
+
+        manager.init_piece(piece_index, piece_size);
+
+        // Create distinct data for each block
+        let data1: Vec<u8> = (0..BLOCK_SIZE as usize).map(|i| (i % 256) as u8).collect();
+        let data2: Vec<u8> = (0..1000).map(|i| ((i + 100) % 256) as u8).collect();
+
+        let block1 = manager.next_block(piece_index, piece_size).unwrap();
+        manager.store_block(block1, data1.clone());
+
+        let block2 = manager.next_block(piece_index, piece_size).unwrap();
+        manager.store_block(block2, data2.clone());
+
+        let assembled = manager.assemble_piece(piece_index).unwrap();
+        assert_eq!(assembled.len(), BLOCK_SIZE as usize + 1000);
+        assert_eq!(&assembled[..BLOCK_SIZE as usize], &data1[..]);
+        assert_eq!(&assembled[BLOCK_SIZE as usize..], &data2[..]);
+    }
+
+    #[test]
+    fn test_assemble_piece_returns_none_when_incomplete() {
+        let mut manager = BlockManager::new();
+        let piece_index = 0;
+        let piece_size = BLOCK_SIZE * 2;
+
+        manager.init_piece(piece_index, piece_size);
+
+        // Only store first block
+        let block1 = manager.next_block(piece_index, piece_size).unwrap();
+        manager.store_block(block1, create_test_block(BLOCK_SIZE as usize));
+
+        assert!(manager.assemble_piece(piece_index).is_none());
+    }
+
+    #[test]
+    fn test_cleanup_piece() {
+        let mut manager = BlockManager::new();
+        let piece_index = 0;
+        let piece_size = BLOCK_SIZE;
+
+        manager.init_piece(piece_index, piece_size);
+        let block = manager.next_block(piece_index, piece_size).unwrap();
+        manager.store_block(block, create_test_block(BLOCK_SIZE as usize));
+
+        assert!(manager.has_piece(piece_index));
+
+        manager.cleanup_piece(piece_index);
+
+        assert!(!manager.has_piece(piece_index));
     }
 }
