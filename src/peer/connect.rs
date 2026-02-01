@@ -60,4 +60,44 @@ impl Peer {
 
         Ok(())
     }
+
+    pub async fn send_not_interested(&mut self) -> anyhow::Result<()> {
+        self.tcp_stream
+            .as_mut()
+            .context("TCP stream not initialized")?
+            .send(PeerMessage::NotInterested)
+            .await
+            .context("Failed to send not interested")?;
+
+        Ok(())
+    }
+
+    /// Receive the next message from the peer.
+    /// Returns None if the connection is closed.
+    pub async fn receive_message(&mut self) -> anyhow::Result<Option<PeerMessage>> {
+        let msg = self
+            .tcp_stream
+            .as_mut()
+            .context("TCP stream not initialized")?
+            .next()
+            .await;
+
+        match msg {
+            Some(Ok(message)) => Ok(Some(message)),
+            Some(Err(e)) => Err(e).context("Failed to decode message"),
+            None => Ok(None), // Connection closed
+        }
+    }
+
+    /// Send a message to the peer
+    pub async fn send_message(&mut self, msg: PeerMessage) -> anyhow::Result<()> {
+        self.tcp_stream
+            .as_mut()
+            .context("TCP stream not initialized")?
+            .send(msg)
+            .await
+            .context("Failed to send message")?;
+
+        Ok(())
+    }
 }

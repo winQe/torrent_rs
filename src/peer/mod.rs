@@ -46,4 +46,36 @@ impl Peer {
     pub fn bitfield(&self) -> Option<&Bitfield> {
         self.bitfield.as_ref()
     }
+
+    pub fn address(&self) -> SocketAddrV4 {
+        self.addr
+    }
+
+    pub fn is_choked(&self) -> bool {
+        self.state.is_choked()
+    }
+
+    pub fn is_interested(&self) -> bool {
+        self.state.is_interested()
+    }
+
+    pub fn choke(&mut self) {
+        self.state.choke();
+    }
+
+    pub fn unchoke(&mut self) {
+        self.state.unchoke();
+    }
+
+    pub fn set_interested(&mut self, interested: bool) {
+        self.state.set_interested(interested);
+    }
+
+    /// Check if this peer has a specific piece
+    pub fn has_piece(&self, piece_index: u32) -> bool {
+        self.bitfield
+            .as_ref()
+            .map(|bf| bf.has_piece(piece_index as usize))
+            .unwrap_or(false)
+    }
 }
