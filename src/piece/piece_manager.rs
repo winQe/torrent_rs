@@ -92,4 +92,30 @@ impl PieceManager {
             }
         }
     }
+
+    /// Mark piece as failed (e.g., hash verification failed).
+    /// This removes it from pending so it can be re-requested.
+    pub fn mark_failed(&mut self, piece: PieceIndex) {
+        self.pending.remove(&piece);
+    }
+
+    /// Check if all pieces have been downloaded
+    pub fn is_complete(&self) -> bool {
+        self.completed.len() == self.total_pieces as usize
+    }
+
+    /// Get download progress as (completed, total)
+    pub fn progress(&self) -> (usize, u32) {
+        (self.completed.len(), self.total_pieces)
+    }
+
+    /// Get the standard piece size
+    pub fn piece_size(&self) -> u32 {
+        self.piece_size
+    }
+
+    /// Get total number of pieces
+    pub fn total_pieces(&self) -> u32 {
+        self.total_pieces
+    }
 }
