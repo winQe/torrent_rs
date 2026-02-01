@@ -1,13 +1,12 @@
 use anyhow::Context;
 use std::{
-    fs::File,
+    fs::{self, File},
     io::{Seek, SeekFrom, Write},
+    path::PathBuf,
 };
 
 use super::FileManager;
 use crate::message::PieceIndex;
-
-static BASE_PATH: &str = "/home/avt/Downloads/";
 
 pub struct DiskFileManager {
     files: Vec<File>,
@@ -16,12 +15,22 @@ pub struct DiskFileManager {
 }
 
 impl FileManager for DiskFileManager {
-    fn new(files: Vec<(String, u64)>, piece_size: u32) -> anyhow::Result<Self> {
+    fn new(base_path: PathBuf, files: Vec<(String, u64)>, piece_size: u32) -> anyhow::Result<Self> {
         let mut file_handles = Vec::with_capacity(files.len());
 
+        // Ensure base directory exists
+        fs::create_dir_all(&base_path).context("Failed to create download directory")?;
+
         for (filename, _) in &files {
-            let file =
-                File::create(BASE_PATH.to_owned() + filename).context("Failed to create file")?;
+            let file_path = base_path.join(filename);
+
+            // Create parent directories if needed (for multi-file torrents)
+            if let Some(parent) = file_path.parent() {
+                fs::create_dir_all(parent).context("Failed to create parent directory")?;
+            }
+
+            let file = File::create(&file_path)
+                .with_context(|| format!("Failed to create file: {}", file_path.display()))?;
             file_handles.push(file);
         }
 
