@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use indicatif::{ProgressBar, ProgressStyle};
 use tokio::sync::{broadcast, mpsc, Semaphore};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
@@ -48,11 +49,6 @@ impl TorrentSession {
             .info_hash
             .context("Torrent missing info hash")?;
 
-        info!(
-            "Starting download: {} ({} bytes, {} pieces)",
-            self.torrent.info.name, total_length, total_pieces
-        );
-
         // Initialize shared state
         let state = SharedState::new(total_pieces, piece_size);
 
@@ -81,18 +77,33 @@ impl TorrentSession {
         });
 
         // Announce to tracker and get peers
-        info!("Announcing to tracker: {}", self.torrent.announce);
         let tracker_response = TrackerRequest::announce(&self.torrent)
             .await
             .context("Failed to announce to tracker")?;
 
         let peer_count = tracker_response.peer_addresses.0.len();
-        info!("Got {} peers from tracker", peer_count);
+
+        // Print startup banner
+        println!("Torrent: {}", self.torrent.info.name);
+        println!("Size:    {} ({} pieces)", format_bytes(total_length), total_pieces);
+        println!("Tracker: {}", self.torrent.announce);
+        println!("Peers:   {} found", peer_count);
+        println!();
 
         if peer_count == 0 {
-            warn!("No peers available from tracker");
+            eprintln!("No peers available from tracker");
             return Ok(());
         }
+
+        // Set up progress bar
+        let pb = ProgressBar::new(total_pieces as u64);
+        pb.set_style(
+            ProgressStyle::with_template(
+                "{bar:40.cyan/blue} {pos}/{len} pieces  {msg}"
+            )
+            .unwrap()
+            .progress_chars("##-"),
+        );
 
         // Spawn peer workers with concurrency limit
         let semaphore = Arc::new(Semaphore::new(self.config.max_peers));
@@ -124,40 +135,64 @@ impl TorrentSession {
         // Drop our sender so writer task can detect completion
         drop(piece_tx);
 
-        // Progress reporting task
+        // Progress update task
         let progress_state = Arc::clone(&state);
+        let progress_pb = pb.clone();
         let progress_handle = tokio::spawn(async move {
             loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
                 let stats = &progress_state.stats;
                 let completed = stats.pieces_completed();
-                let total = stats.total_pieces();
-                let percent = stats.progress_percent();
-                let downloaded_mb = stats.downloaded_bytes() as f64 / (1024.0 * 1024.0);
+                let downloaded = stats.downloaded_bytes();
+                let speed = stats.download_speed();
 
-                info!(
-                    "Progress: {}/{} pieces ({:.1}%), {:.2} MB downloaded",
-                    completed, total, percent, downloaded_mb
-                );
+                progress_pb.set_position(completed);
+                progress_pb.set_message(format!(
+                    "{}  {}/s",
+                    format_bytes(downloaded),
+                    format_bytes(speed as u64),
+                ));
 
-                if completed as u32 == total {
+                if completed as u32 == stats.total_pieces() {
                     break;
                 }
             }
         });
 
-        // Wait for completion or all peers to disconnect
-        while let Some(result) = peer_handles.join_next().await {
-            if let Err(e) = result {
-                warn!("Peer task panicked: {}", e);
-            }
+        // Wait for completion, all peers to disconnect, or Ctrl+C
+        loop {
+            tokio::select! {
+                result = peer_handles.join_next() => {
+                    match result {
+                        Some(Err(e)) => warn!("Peer task panicked: {}", e),
+                        Some(Ok(_)) => {}
+                        None => break, // all peers done
+                    }
 
-            // Check if download is complete
-            let pm = state.piece_manager.read().await;
-            if pm.is_complete() {
-                info!("Download complete!");
-                break;
+                    // Check if download is complete
+                    let pm = state.piece_manager.read().await;
+                    if pm.is_complete() {
+                        break;
+                    }
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    pb.finish_and_clear();
+                    eprintln!("\nShutting down...");
+                    let _ = shutdown_tx.send(());
+                    peer_handles.abort_all();
+                    let _ = writer_handle.await;
+                    progress_handle.abort();
+
+                    let stats = &state.stats;
+                    eprintln!(
+                        "Downloaded {}/{} pieces ({})",
+                        stats.pieces_completed(),
+                        stats.total_pieces(),
+                        format_bytes(stats.downloaded_bytes()),
+                    );
+                    return Ok(());
+                }
             }
         }
 
@@ -171,11 +206,15 @@ impl TorrentSession {
         progress_handle.abort();
 
         let stats = &state.stats;
-        info!(
-            "Final: {}/{} pieces, {:.2} MB downloaded",
+        pb.finish_with_message(format!(
+            "{}  done!",
+            format_bytes(stats.downloaded_bytes()),
+        ));
+
+        println!(
+            "\nDownload complete: {}/{} pieces",
             stats.pieces_completed(),
             stats.total_pieces(),
-            stats.downloaded_bytes() as f64 / (1024.0 * 1024.0)
         );
 
         Ok(())
@@ -197,6 +236,23 @@ impl TorrentSession {
                     .collect()
             }
         }
+    }
+}
+
+/// Format byte count as human-readable string (e.g. "631.0 MB").
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
     }
 }
 
