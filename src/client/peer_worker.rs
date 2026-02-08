@@ -157,7 +157,11 @@ impl PeerWorker {
                 debug!("Peer {} has piece {}", self.peer.address(), piece_index);
             }
 
-            PeerMessage::Piece { index, begin, block } => {
+            PeerMessage::Piece {
+                index,
+                begin,
+                block,
+            } => {
                 self.handle_piece_data(index, begin, block).await?;
             }
 
@@ -181,7 +185,12 @@ impl PeerWorker {
         Ok(())
     }
 
-    async fn handle_piece_data(&mut self, index: PieceIndex, begin: u32, block: Vec<u8>) -> Result<()> {
+    async fn handle_piece_data(
+        &mut self,
+        index: PieceIndex,
+        begin: u32,
+        block: Vec<u8>,
+    ) -> Result<()> {
         let block_info = BlockInfo {
             piece_index: index,
             offset: begin,
@@ -189,9 +198,8 @@ impl PeerWorker {
         };
 
         // Remove from pending requests
-        self.pending_requests.retain(|b| {
-            !(b.piece_index == index && b.offset == begin)
-        });
+        self.pending_requests
+            .retain(|b| !(b.piece_index == index && b.offset == begin));
 
         // Store the block
         {

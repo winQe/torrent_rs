@@ -72,7 +72,11 @@ impl BlockManager {
             return None;
         }
 
-        let total_size: usize = blocks.iter().filter_map(|b| b.as_ref()).map(|b| b.len()).sum();
+        let total_size: usize = blocks
+            .iter()
+            .filter_map(|b| b.as_ref())
+            .map(|b| b.len())
+            .sum();
         let mut assembled = Vec::with_capacity(total_size);
 
         for block in blocks.iter().filter_map(|b| b.as_ref()) {
@@ -87,7 +91,8 @@ impl BlockManager {
     pub fn cleanup_piece(&mut self, piece_index: PieceIndex) {
         self.piece_blocks.remove(&piece_index);
         // Also remove any stale pending blocks for this piece
-        self.pending_blocks.retain(|info, _| info.piece_index != piece_index);
+        self.pending_blocks
+            .retain(|info, _| info.piece_index != piece_index);
     }
 
     /// Returns true if the piece has been initialized.

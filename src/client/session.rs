@@ -25,7 +25,10 @@ pub struct TorrentSession {
 
 impl TorrentSession {
     /// Create a new session for downloading a torrent file.
-    pub async fn new(torrent_path: impl AsRef<Path> + std::fmt::Debug, config: ClientConfig) -> Result<Self> {
+    pub async fn new(
+        torrent_path: impl AsRef<Path> + std::fmt::Debug,
+        config: ClientConfig,
+    ) -> Result<Self> {
         let torrent = Torrent::open(torrent_path)
             .await
             .context("Failed to open torrent file")?;
@@ -58,12 +61,9 @@ impl TorrentSession {
 
         // Set up disk file manager
         let files = self.get_file_info();
-        let disk_manager = DiskFileManager::new(
-            self.config.download_path.clone(),
-            files,
-            piece_size,
-        )
-        .context("Failed to create disk manager")?;
+        let disk_manager =
+            DiskFileManager::new(self.config.download_path.clone(), files, piece_size)
+                .context("Failed to create disk manager")?;
         let disk_manager = Arc::new(tokio::sync::Mutex::new(disk_manager));
 
         // Spawn piece writer/verifier task
@@ -73,7 +73,14 @@ impl TorrentSession {
         let writer_shutdown = shutdown_tx.subscribe();
 
         let writer_handle = tokio::spawn(async move {
-            piece_writer_task(piece_rx, piece_hashes, writer_state, writer_disk, writer_shutdown).await
+            piece_writer_task(
+                piece_rx,
+                piece_hashes,
+                writer_state,
+                writer_disk,
+                writer_shutdown,
+            )
+            .await
         });
 
         // Announce to tracker and get peers
@@ -85,7 +92,11 @@ impl TorrentSession {
 
         // Print startup banner
         println!("Torrent: {}", self.torrent.info.name);
-        println!("Size:    {} ({} pieces)", format_bytes(total_length), total_pieces);
+        println!(
+            "Size:    {} ({} pieces)",
+            format_bytes(total_length),
+            total_pieces
+        );
         println!("Tracker: {}", self.torrent.announce);
         println!("Peers:   {} found", peer_count);
         println!();
@@ -98,11 +109,9 @@ impl TorrentSession {
         // Set up progress bar
         let pb = ProgressBar::new(total_pieces as u64);
         pb.set_style(
-            ProgressStyle::with_template(
-                "{bar:40.cyan/blue} {pos}/{len} pieces  {msg}"
-            )
-            .unwrap()
-            .progress_chars("##-"),
+            ProgressStyle::with_template("{bar:40.cyan/blue} {pos}/{len} pieces  {msg}")
+                .unwrap()
+                .progress_chars("##-"),
         );
 
         // Spawn peer workers with concurrency limit
@@ -206,10 +215,7 @@ impl TorrentSession {
         progress_handle.abort();
 
         let stats = &state.stats;
-        pb.finish_with_message(format!(
-            "{}  done!",
-            format_bytes(stats.downloaded_bytes()),
-        ));
+        pb.finish_with_message(format!("{}  done!", format_bytes(stats.downloaded_bytes()),));
 
         println!(
             "\nDownload complete: {}/{} pieces",
@@ -226,15 +232,13 @@ impl TorrentSession {
             Keys::SingleFile { length } => {
                 vec![(self.torrent.info.name.clone(), *length as u64)]
             }
-            Keys::MultiFile { files } => {
-                files
-                    .iter()
-                    .map(|f| {
-                        let path = f.path.join(std::path::MAIN_SEPARATOR_STR);
-                        (path, f.length as u64)
-                    })
-                    .collect()
-            }
+            Keys::MultiFile { files } => files
+                .iter()
+                .map(|f| {
+                    let path = f.path.join(std::path::MAIN_SEPARATOR_STR);
+                    (path, f.length as u64)
+                })
+                .collect(),
         }
     }
 }
