@@ -1,25 +1,47 @@
-use std::env;
 use std::path::PathBuf;
+
+use clap::Parser;
+use tracing_subscriber::{fmt, EnvFilter};
 
 use torrent_rs::client::{ClientConfig, TorrentSession};
 
+/// A BitTorrent client written in Rust
+#[derive(Parser)]
+#[command(name = "torrent_rs", version)]
+struct Args {
+    /// Path to the .torrent file
+    torrent_file: PathBuf,
+
+    /// Download directory
+    #[arg(short, long, default_value = "./downloads")]
+    output: PathBuf,
+
+    /// Maximum number of peer connections
+    #[arg(short, long, default_value_t = 50)]
+    peers: usize,
+
+    /// Enable verbose logging
+    #[arg(short, long)]
+    verbose: bool,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    let args = Args::parse();
 
-    let args: Vec<String> = env::args().collect();
+    let filter = if args.verbose {
+        EnvFilter::new("torrent_rs=debug")
+    } else {
+        EnvFilter::new("torrent_rs=error")
+    };
 
-    let torrent_path = args.get(1).map(PathBuf::from).unwrap_or_else(|| {
-        PathBuf::from("example/debian-12.7.0-amd64-netinst.iso.torrent")
-    });
+    fmt().with_env_filter(filter).init();
 
-    let download_path = args.get(2).map(PathBuf::from).unwrap_or_else(|| {
-        PathBuf::from("./downloads")
-    });
+    let config = ClientConfig::default()
+        .with_download_path(args.output)
+        .with_max_peers(args.peers);
 
-    let config = ClientConfig::default().with_download_path(download_path);
-
-    let session = TorrentSession::new(&torrent_path, config).await?;
+    let session = TorrentSession::new(&args.torrent_file, config).await?;
     session.start().await?;
 
     Ok(())
