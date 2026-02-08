@@ -5,8 +5,9 @@ use tokio_util::codec::{Decoder, Encoder};
 
 use super::PeerMessage;
 
-// DDoS Protection
-const MAX_MESSAGE_SIZE: usize = 16 * 1024; // 16 MB
+// DDoS Protection - max piece size is typically 256KB-1MB, allow up to 2MB
+const MAX_MESSAGE_SIZE: usize = 2 * 1024 * 1024;
+
 #[derive(Debug)]
 pub struct MessageCodec;
 
@@ -21,23 +22,29 @@ impl Decoder for MessageCodec {
             return Ok(None);
         }
 
-        let length = src.get_u32() as usize;
+        // Peek at length without consuming
+        let length = u32::from_be_bytes([src[0], src[1], src[2], src[3]]) as usize;
+
         if length == 0 {
+            src.advance(4); // Now consume the length prefix
             return Ok(Some(PeerMessage::KeepAlive));
         }
 
         // DDoS Protection
-        if length > MAX_MESSAGE_SIZE || src.len() > MAX_MESSAGE_SIZE {
+        if length > MAX_MESSAGE_SIZE {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Message length exceeds maximum allowed size",
+                format!("Message length {} exceeds maximum allowed size", length),
             ));
         }
 
-        // Not full frame is  received, wait for more
-        if src.len() < length {
+        // Check if we have the full message (4 byte prefix + length bytes)
+        if src.len() < 4 + length {
             return Ok(None);
         }
+
+        // Now consume the length prefix
+        src.advance(4);
 
         // ID is a single decimal byte
         let id = src.get_u8();
@@ -238,7 +245,7 @@ mod tests {
         let result = codec.decode(&mut buffer);
         assert!(result.is_err());
         if let Err(e) = result {
-            assert_eq!(e.to_string(), "Message length exceeds maximum allowed size");
+            assert!(e.to_string().contains("exceeds maximum allowed size"));
         }
     }
 

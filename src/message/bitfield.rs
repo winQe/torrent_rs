@@ -45,10 +45,11 @@ impl<'a> Iterator for BitfieldIterator<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.index < self.bitfield.len() as u32 {
+            let current = self.index;
             self.index += 1;
 
-            if self.bitfield.has_piece(self.index as usize) {
-                return Some(self.index as PieceIndex);
+            if self.bitfield.has_piece(current as usize) {
+                return Some(current as PieceIndex);
             }
         }
         None
