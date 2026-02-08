@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::{Mutex, RwLock};
 
 use crate::message::PieceIndex;
@@ -41,6 +42,8 @@ pub struct DownloadStats {
     pieces_completed: AtomicU64,
     /// Total number of pieces
     total_pieces: u32,
+    /// When the download started
+    start_time: Instant,
 }
 
 impl DownloadStats {
@@ -50,6 +53,7 @@ impl DownloadStats {
             uploaded_bytes: AtomicU64::new(0),
             pieces_completed: AtomicU64::new(0),
             total_pieces,
+            start_time: Instant::now(),
         }
     }
 
@@ -86,6 +90,15 @@ impl DownloadStats {
             return 100.0;
         }
         (self.pieces_completed() as f64 / self.total_pieces as f64) * 100.0
+    }
+
+    /// Returns download speed in bytes per second.
+    pub fn download_speed(&self) -> f64 {
+        let elapsed = self.start_time.elapsed().as_secs_f64();
+        if elapsed < 0.001 {
+            return 0.0;
+        }
+        self.downloaded_bytes() as f64 / elapsed
     }
 }
 
