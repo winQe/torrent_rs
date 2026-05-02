@@ -23,6 +23,14 @@ impl Bitfield {
         self.data[byte_index] & (1 << (7 - bit_index)) != 0
     }
 
+    pub fn set_piece(&mut self, index: usize) {
+        let byte_index = index / 8;
+        let bit_index = index % 8;
+        if byte_index < self.data.len() {
+            self.data[byte_index] |= 1 << (7 - bit_index);
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.data.len() * 8
     }

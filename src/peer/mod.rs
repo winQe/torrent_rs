@@ -78,4 +78,11 @@ impl Peer {
             .map(|bf| bf.has_piece(piece_index as usize))
             .unwrap_or(false)
     }
+
+    /// Record that this peer just announced a new piece (via Have).
+    pub fn mark_piece(&mut self, piece_index: u32) {
+        if let Some(bf) = self.bitfield.as_mut() {
+            bf.set_piece(piece_index as usize);
+        }
+    }
 }

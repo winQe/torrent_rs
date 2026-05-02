@@ -172,10 +172,10 @@ impl PeerWorker {
             }
 
             PeerMessage::Have(piece_index) => {
-                // Peer got a new piece, update availability
-                // For simplicity, we don't update the BTreeSet here
-                // as it would require the full bitfield
                 debug!("Peer {} has piece {}", self.peer.address(), piece_index);
+                self.peer.mark_piece(piece_index);
+                let mut pm = self.state.piece_manager.write().await;
+                pm.add_piece(piece_index);
             }
 
             PeerMessage::Piece {

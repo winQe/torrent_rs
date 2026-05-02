@@ -36,20 +36,22 @@ impl PieceManager {
     /// Update availability when peer connects with their bitfield
     pub fn add_peer(&mut self, bitfield: &Bitfield) {
         for piece_index in bitfield.iter() {
-            if self.completed.contains(&piece_index) {
-                continue;
-            }
-
-            let entry = self.piece_counts.entry(piece_index).or_insert(0);
-            let old_count = *entry;
-            *entry += 1;
-
-            // Need to remove the old
-            if old_count > 0 {
-                self.availability_queue.remove(&(old_count, piece_index));
-            }
-            self.availability_queue.insert((*entry, piece_index));
+            self.add_piece(piece_index);
         }
+    }
+
+    /// Increment availability for a single piece (e.g. on a `Have` announcement).
+    pub fn add_piece(&mut self, piece_index: PieceIndex) {
+        if self.completed.contains(&piece_index) {
+            return;
+        }
+        let entry = self.piece_counts.entry(piece_index).or_insert(0);
+        let old_count = *entry;
+        *entry += 1;
+        if old_count > 0 {
+            self.availability_queue.remove(&(old_count, piece_index));
+        }
+        self.availability_queue.insert((*entry, piece_index));
     }
 
     /// Select the next piece this peer can serve, using rarest-first across the swarm.
@@ -145,6 +147,18 @@ mod tests {
 
         let empty = Bitfield::from_bytes(vec![0b0000_0000]);
         assert_eq!(pm.next_piece_for(&empty), None);
+    }
+
+    #[test]
+    fn test_add_piece_makes_piece_available() {
+        let mut pm = PieceManager::new(3, 16384);
+        // Nobody has anything yet
+        let bf = Bitfield::from_bytes(vec![0b1110_0000]);
+        assert_eq!(pm.next_piece_for(&bf), None);
+
+        // Peer announces piece 1 via Have
+        pm.add_piece(1);
+        assert_eq!(pm.next_piece_for(&bf), Some(1));
     }
 
     #[test]
