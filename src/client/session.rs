@@ -61,7 +61,7 @@ impl TorrentSession {
         let (shutdown_tx, _) = broadcast::channel::<()>(1);
 
         // Set up disk file manager
-        let files = self.get_file_info();
+        let files = self.get_file_info().context("Invalid path in torrent metadata")?;
         let disk_manager =
             DiskFileManager::new(self.config.download_path.clone(), files, piece_size)
                 .context("Failed to create disk manager")?;
@@ -248,21 +248,47 @@ impl TorrentSession {
         Ok(())
     }
 
-    /// Extract file information from torrent for disk manager
-    fn get_file_info(&self) -> Vec<(String, u64)> {
+    /// Extract file information from torrent for disk manager.
+    /// Sanitizes all path components to prevent traversal/absolute-path escape.
+    /// For multi-file torrents, files are placed under `info.name` per BEP-3.
+    fn get_file_info(&self) -> Result<Vec<(String, u64)>> {
         match &self.torrent.info.keys {
             Keys::SingleFile { length } => {
-                vec![(self.torrent.info.name.clone(), *length as u64)]
+                let path = safe_relative_path(&[self.torrent.info.name.as_str()])?;
+                Ok(vec![(path_to_string(&path)?, *length as u64)])
             }
             Keys::MultiFile { files } => files
                 .iter()
                 .map(|f| {
-                    let path = f.path.join(std::path::MAIN_SEPARATOR_STR);
-                    (path, f.length as u64)
+                    let mut comps: Vec<&str> = Vec::with_capacity(1 + f.path.len());
+                    comps.push(self.torrent.info.name.as_str());
+                    comps.extend(f.path.iter().map(|s| s.as_str()));
+                    let path = safe_relative_path(&comps)?;
+                    Ok((path_to_string(&path)?, f.length as u64))
                 })
                 .collect(),
         }
     }
+}
+
+fn safe_relative_path(components: &[&str]) -> Result<std::path::PathBuf> {
+    let mut path = std::path::PathBuf::new();
+    for c in components {
+        if c.is_empty() || *c == "." || *c == ".." {
+            anyhow::bail!("Invalid torrent path component: {:?}", c);
+        }
+        if c.bytes().any(|b| b == b'/' || b == b'\\' || b == 0) {
+            anyhow::bail!("Torrent path component contains separator or NUL: {:?}", c);
+        }
+        path.push(c);
+    }
+    Ok(path)
+}
+
+fn path_to_string(path: &std::path::Path) -> Result<String> {
+    path.to_str()
+        .map(|s| s.to_owned())
+        .ok_or_else(|| anyhow::anyhow!("Torrent path is not valid UTF-8: {}", path.display()))
 }
 
 /// Verify pieces claimed in the resume file against bytes on disk and mark valid ones as completed.
