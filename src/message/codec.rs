@@ -275,6 +275,16 @@ mod tests {
     }
 
     #[test]
+    fn test_encode_port_uses_correct_length_prefix() {
+        use tokio_util::codec::Encoder;
+        let mut codec = MessageCodec;
+        let mut buf = BytesMut::new();
+        codec.encode(PeerMessage::Port(6881), &mut buf).unwrap();
+        // length prefix = 3 (id + 2-byte port), id = 9, port = 6881 = 0x1AE1
+        assert_eq!(&buf[..], &[0, 0, 0, 3, 9, 0x1A, 0xE1]);
+    }
+
+    #[test]
     fn test_decode_have_with_short_body_errors() {
         let mut codec = MessageCodec;
         // claims length 2 (id + 1 byte body) for Have, which needs 4-byte body

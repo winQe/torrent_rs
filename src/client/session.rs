@@ -291,6 +291,43 @@ fn path_to_string(path: &std::path::Path) -> Result<String> {
         .ok_or_else(|| anyhow::anyhow!("Torrent path is not valid UTF-8: {}", path.display()))
 }
 
+#[cfg(test)]
+mod path_tests {
+    use super::safe_relative_path;
+
+    #[test]
+    fn rejects_parent_traversal() {
+        assert!(safe_relative_path(&["..", "etc", "passwd"]).is_err());
+    }
+
+    #[test]
+    fn rejects_absolute_unix_path() {
+        assert!(safe_relative_path(&["/etc/passwd"]).is_err());
+    }
+
+    #[test]
+    fn rejects_windows_separator() {
+        assert!(safe_relative_path(&["foo\\bar"]).is_err());
+    }
+
+    #[test]
+    fn rejects_dot_and_empty() {
+        assert!(safe_relative_path(&["."]).is_err());
+        assert!(safe_relative_path(&[""]).is_err());
+    }
+
+    #[test]
+    fn rejects_nul_byte() {
+        assert!(safe_relative_path(&["foo\0bar"]).is_err());
+    }
+
+    #[test]
+    fn accepts_clean_relative_path() {
+        let p = safe_relative_path(&["dir", "subdir", "file.iso"]).unwrap();
+        assert_eq!(p, std::path::Path::new("dir").join("subdir").join("file.iso"));
+    }
+}
+
 /// Verify pieces claimed in the resume file against bytes on disk and mark valid ones as completed.
 /// Returns the number of pieces successfully resumed.
 #[allow(clippy::too_many_arguments)]
