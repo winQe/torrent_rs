@@ -11,9 +11,7 @@ pub struct ClientConfig {
     pub max_peers: usize,
     /// Number of pipelined block requests per peer (improves throughput)
     pub max_requests_per_peer: usize,
-    /// Timeout for establishing peer connections
-    pub connection_timeout: Duration,
-    /// Timeout for block requests before re-requesting
+    /// Timeout for block requests before dropping the peer
     pub request_timeout: Duration,
 }
 
@@ -24,7 +22,6 @@ impl Default for ClientConfig {
             listen_port: 6881,
             max_peers: 50,
             max_requests_per_peer: 5,
-            connection_timeout: Duration::from_secs(10),
             request_timeout: Duration::from_secs(30),
         }
     }
