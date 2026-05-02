@@ -10,6 +10,12 @@ impl Bitfield {
         Self { data: bytes }
     }
 
+    pub fn empty(total_pieces: usize) -> Self {
+        Self {
+            data: vec![0u8; total_pieces.div_ceil(8)],
+        }
+    }
+
     pub fn has_piece(&self, index: usize) -> bool {
         let byte_index = index / 8;
         let bit_index = index % 8;
@@ -46,6 +52,38 @@ impl Bitfield {
 pub struct BitfieldIterator<'a> {
     bitfield: &'a Bitfield,
     index: PieceIndex,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_bitfield_has_no_pieces() {
+        let bf = Bitfield::empty(13);
+        assert_eq!(bf.data.len(), 2); // ceil(13/8)
+        for i in 0..13 {
+            assert!(!bf.has_piece(i));
+        }
+    }
+
+    #[test]
+    fn set_piece_marks_only_requested_index() {
+        let mut bf = Bitfield::empty(16);
+        bf.set_piece(5);
+        for i in 0..16 {
+            assert_eq!(bf.has_piece(i), i == 5);
+        }
+    }
+
+    #[test]
+    fn set_piece_out_of_range_is_noop() {
+        let mut bf = Bitfield::empty(8);
+        bf.set_piece(100);
+        for i in 0..8 {
+            assert!(!bf.has_piece(i));
+        }
+    }
 }
 
 impl<'a> Iterator for BitfieldIterator<'a> {

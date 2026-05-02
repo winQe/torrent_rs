@@ -68,20 +68,12 @@ impl PeerWorker {
         let addr = self.peer.address();
         debug!("Connecting to peer {}", addr);
 
-        // Connect and receive bitfield
-        let bitfield = self
-            .peer
-            .receive_bitfield()
+        self.peer
+            .connect(self.total_pieces as usize)
             .await
             .with_context(|| format!("Failed to connect to peer {}", addr))?;
 
-        info!("Connected to peer {}, received bitfield", addr);
-
-        // Update piece availability in shared state
-        {
-            let mut pm = self.state.piece_manager.write().await;
-            pm.add_peer(bitfield);
-        }
+        info!("Connected to peer {}", addr);
 
         // Express interest in downloading
         self.peer.send_interested().await?;
@@ -198,8 +190,17 @@ impl PeerWorker {
                 // Upload requests - not implemented yet
             }
 
-            PeerMessage::Bitfield(_) | PeerMessage::Port(_) => {
-                // Unexpected at this point
+            PeerMessage::Bitfield(data) => {
+                let bf = crate::message::Bitfield::from_bytes(data);
+                {
+                    let mut pm = self.state.piece_manager.write().await;
+                    pm.add_peer(&bf);
+                }
+                self.peer.set_bitfield(bf);
+            }
+
+            PeerMessage::Port(_) => {
+                // DHT advertisement - ignored until DHT is implemented
             }
         }
 

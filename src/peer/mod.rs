@@ -85,4 +85,8 @@ impl Peer {
             bf.set_piece(piece_index as usize);
         }
     }
+
+    pub fn set_bitfield(&mut self, bitfield: Bitfield) {
+        self.bitfield = Some(bitfield);
+    }
 }

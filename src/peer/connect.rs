@@ -1,36 +1,23 @@
-use anyhow::{bail, Context};
+use anyhow::Context;
 
 use super::Peer;
 use crate::{
     message::{Bitfield, MessageCodec, PeerMessage},
     piece::BlockInfo,
 };
-use futures::{SinkExt, StreamExt};
+use futures::SinkExt;
+use futures::StreamExt;
 
 impl Peer {
-    pub async fn receive_bitfield(&mut self) -> anyhow::Result<&Bitfield> {
+    /// Establish the TCP connection and complete the BitTorrent handshake.
+    /// Initializes an empty bitfield sized to the torrent; pieces are added
+    /// later via `Bitfield` and `Have` messages from the peer.
+    pub async fn connect(&mut self, total_pieces: usize) -> anyhow::Result<()> {
         let tcp_stream = self.handshake().await.context("Failed to handshake")?;
-        let mut frame = tokio_util::codec::Framed::new(tcp_stream, MessageCodec);
-
-        let bitfield = frame
-            .next()
-            .await
-            .context("Failed to get the next TCP frame")?
-            .context("Failed to receive bitfield")?;
-
-        match bitfield {
-            PeerMessage::Bitfield(data) => {
-                self.bitfield = Some(Bitfield::from_bytes(data));
-            }
-            _ => {
-                bail!("First message is not bitfield");
-            }
-        }
-
+        let frame = tokio_util::codec::Framed::new(tcp_stream, MessageCodec);
         self.tcp_stream = Some(frame);
-
-        self.bitfield()
-            .context("Bitfield was not set after successful connection")
+        self.bitfield = Some(Bitfield::empty(total_pieces));
+        Ok(())
     }
 
     pub async fn request_block(&mut self, block_info: BlockInfo) -> anyhow::Result<()> {
