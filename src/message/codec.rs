@@ -49,34 +49,51 @@ impl Decoder for MessageCodec {
         // ID is a single decimal byte
         let id = src.get_u8();
 
+        let body_len = length - 1;
+
         let message = match id {
-            0 => PeerMessage::Choke,
-            1 => PeerMessage::Unchoke,
-            2 => PeerMessage::Interested,
-            3 => PeerMessage::NotInterested,
+            0 => {
+                require_body_len(id, body_len, 0)?;
+                PeerMessage::Choke
+            }
+            1 => {
+                require_body_len(id, body_len, 0)?;
+                PeerMessage::Unchoke
+            }
+            2 => {
+                require_body_len(id, body_len, 0)?;
+                PeerMessage::Interested
+            }
+            3 => {
+                require_body_len(id, body_len, 0)?;
+                PeerMessage::NotInterested
+            }
             4 => {
-                let piece_index = src.get_u32();
-                PeerMessage::Have(piece_index)
+                require_body_len(id, body_len, 4)?;
+                PeerMessage::Have(src.get_u32())
             }
             5 => {
-                let bitfield = src.split_to(length - 1).to_vec(); // Excluding the ID
+                let bitfield = src.split_to(body_len).to_vec();
                 PeerMessage::Bitfield(bitfield)
             }
             6 => {
-                let index = src.get_u32();
-                let begin = src.get_u32();
-                let length = src.get_u32();
+                require_body_len(id, body_len, 12)?;
                 PeerMessage::Request {
-                    index,
-                    begin,
-                    length,
+                    index: src.get_u32(),
+                    begin: src.get_u32(),
+                    length: src.get_u32(),
                 }
             }
             7 => {
+                if body_len < 8 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Piece message body too short: {body_len}"),
+                    ));
+                }
                 let index = src.get_u32();
                 let begin = src.get_u32();
-                // IDs, index and begin are 9 bits
-                let block = src.split_to(length - 9).to_vec();
+                let block = src.split_to(body_len - 8).to_vec();
                 PeerMessage::Piece {
                     index,
                     begin,
@@ -84,18 +101,16 @@ impl Decoder for MessageCodec {
                 }
             }
             8 => {
-                let index = src.get_u32();
-                let begin = src.get_u32();
-                let length = src.get_u32();
+                require_body_len(id, body_len, 12)?;
                 PeerMessage::Cancel {
-                    index,
-                    begin,
-                    length,
+                    index: src.get_u32(),
+                    begin: src.get_u32(),
+                    length: src.get_u32(),
                 }
             }
             9 => {
-                let port = src.get_u16();
-                PeerMessage::Port(port)
+                require_body_len(id, body_len, 2)?;
+                PeerMessage::Port(src.get_u16())
             }
 
             _ => {
@@ -108,6 +123,16 @@ impl Decoder for MessageCodec {
 
         Ok(Some(message))
     }
+}
+
+fn require_body_len(id: u8, actual: usize, expected: usize) -> Result<(), io::Error> {
+    if actual != expected {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Message id {id} expects {expected} body bytes, got {actual}"),
+        ));
+    }
+    Ok(())
 }
 
 impl Encoder<PeerMessage> for MessageCodec {
@@ -247,6 +272,33 @@ mod tests {
         if let Err(e) = result {
             assert!(e.to_string().contains("exceeds maximum allowed size"));
         }
+    }
+
+    #[test]
+    fn test_decode_have_with_short_body_errors() {
+        let mut codec = MessageCodec;
+        // claims length 2 (id + 1 byte body) for Have, which needs 4-byte body
+        let mut buffer = BytesMut::from(&[0, 0, 0, 2, 4, 0xFF][..]);
+        let result = codec.decode(&mut buffer);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decode_request_with_short_body_errors() {
+        let mut codec = MessageCodec;
+        // claims length 5 (id + 4 byte body) for Request, which needs 12-byte body
+        let mut buffer = BytesMut::from(&[0, 0, 0, 5, 6, 0, 0, 0, 1][..]);
+        let result = codec.decode(&mut buffer);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decode_piece_with_short_body_errors() {
+        let mut codec = MessageCodec;
+        // claims length 5 (4 body bytes) for Piece, which needs at least 8
+        let mut buffer = BytesMut::from(&[0, 0, 0, 5, 7, 0, 0, 0, 1][..]);
+        let result = codec.decode(&mut buffer);
+        assert!(result.is_err());
     }
 
     #[test]
