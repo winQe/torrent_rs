@@ -1,5 +1,3 @@
-
-
 mod config;
 mod peer_worker;
 mod resume;

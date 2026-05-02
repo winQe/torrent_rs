@@ -1,4 +1,3 @@
-
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::message::Bitfield;
@@ -169,6 +168,9 @@ mod tests {
         let bf = Bitfield::from_bytes(vec![0b1110_0000]);
         let first = pm.next_piece_for(&bf).unwrap();
         let second = pm.next_piece_for(&bf).unwrap();
-        assert_ne!(first, second, "concurrent peers must not be assigned the same piece");
+        assert_ne!(
+            first, second,
+            "concurrent peers must not be assigned the same piece"
+        );
     }
 }

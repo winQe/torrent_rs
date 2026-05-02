@@ -1,5 +1,3 @@
-
-
 mod bitfield;
 mod codec;
 pub use bitfield::Bitfield;

@@ -61,7 +61,9 @@ impl TorrentSession {
         let (shutdown_tx, _) = broadcast::channel::<()>(1);
 
         // Set up disk file manager
-        let files = self.get_file_info().context("Invalid path in torrent metadata")?;
+        let files = self
+            .get_file_info()
+            .context("Invalid path in torrent metadata")?;
         let disk_manager =
             DiskFileManager::new(self.config.download_path.clone(), files, piece_size)
                 .context("Failed to create disk manager")?;
@@ -103,13 +105,10 @@ impl TorrentSession {
         });
 
         // Announce to tracker and get peers
-        let tracker_response = TrackerRequest::announce(
-            &self.torrent,
-            self.peer_id.clone(),
-            self.config.listen_port,
-        )
-        .await
-        .context("Failed to announce to tracker")?;
+        let tracker_response =
+            TrackerRequest::announce(&self.torrent, self.peer_id.clone(), self.config.listen_port)
+                .await
+                .context("Failed to announce to tracker")?;
 
         let peer_count = tracker_response.peer_addresses.0.len();
 
@@ -330,7 +329,10 @@ mod path_tests {
     #[test]
     fn accepts_clean_relative_path() {
         let p = safe_relative_path(&["dir", "subdir", "file.iso"]).unwrap();
-        assert_eq!(p, std::path::Path::new("dir").join("subdir").join("file.iso"));
+        assert_eq!(
+            p,
+            std::path::Path::new("dir").join("subdir").join("file.iso")
+        );
     }
 }
 

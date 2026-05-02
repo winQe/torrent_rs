@@ -1,4 +1,3 @@
-
 use super::{Block, BlockInfo, PieceIndex, BLOCK_SIZE};
 use std::collections::HashMap;
 

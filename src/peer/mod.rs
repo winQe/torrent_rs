@@ -1,4 +1,3 @@
-
 use std::net::SocketAddrV4;
 
 mod address;
