@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::net::SocketAddrV4;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use tokio::sync::{broadcast, mpsc};
@@ -25,8 +26,8 @@ pub struct PeerWorker {
     shutdown_rx: broadcast::Receiver<()>,
     /// Currently assigned piece (if any)
     assigned_piece: Option<PieceIndex>,
-    /// Outstanding block requests (for pipelining)
-    pending_requests: VecDeque<BlockInfo>,
+    /// Outstanding block requests (for pipelining), paired with the time they were sent
+    pending_requests: VecDeque<(BlockInfo, Instant)>,
     /// Total length of the torrent (for calculating last piece size)
     total_length: u64,
     /// Piece size from torrent
@@ -86,6 +87,9 @@ impl PeerWorker {
         self.peer.send_interested().await?;
         self.peer.set_interested(true);
 
+        let mut timeout_check = tokio::time::interval(std::time::Duration::from_secs(2));
+        timeout_check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
         // Main message loop
         loop {
             tokio::select! {
@@ -95,6 +99,14 @@ impl PeerWorker {
                 _ = self.shutdown_rx.recv() => {
                     debug!("Peer {} received shutdown signal", addr);
                     break;
+                }
+
+                // Periodic check for stalled block requests
+                _ = timeout_check.tick() => {
+                    if self.has_timed_out_request() {
+                        warn!("Peer {} stalled (request timeout), dropping", addr);
+                        break;
+                    }
                 }
 
                 // Receive and handle messages
@@ -199,7 +211,7 @@ impl PeerWorker {
 
         // Remove from pending requests
         self.pending_requests
-            .retain(|b| !(b.piece_index == index && b.offset == begin));
+            .retain(|(b, _)| !(b.piece_index == index && b.offset == begin));
 
         // Store the block
         {
@@ -265,7 +277,8 @@ impl PeerWorker {
                     drop(bm); // Release lock before async operation
 
                     self.peer.request_block(block_info).await?;
-                    self.pending_requests.push_back(block_info);
+                    self.pending_requests
+                        .push_back((block_info, Instant::now()));
                 } else {
                     // No more blocks to request for this piece
                     // Either all requested or all received
@@ -278,6 +291,13 @@ impl PeerWorker {
         }
 
         Ok(())
+    }
+
+    /// Returns true if any outstanding block request has been pending longer than the configured timeout.
+    fn has_timed_out_request(&self) -> bool {
+        self.pending_requests
+            .front()
+            .is_some_and(|(_, sent_at)| sent_at.elapsed() > self.config.request_timeout)
     }
 
     /// Calculate the size of a specific piece (last piece may be smaller)
