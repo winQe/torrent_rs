@@ -14,7 +14,8 @@ async fn test_peer_handshake() -> anyhow::Result<()> {
     let torrent_path = PathBuf::from("example/debian-12.7.0-amd64-netinst.iso.torrent");
     let torrent = Torrent::open(torrent_path).await.unwrap();
 
-    let tracker_reponse = tracker::TrackerRequest::announce(&torrent).await;
+    let peer_id = TrackerRequest::generate_peer_id();
+    let tracker_reponse = tracker::TrackerRequest::announce(&torrent, peer_id.clone(), 6881).await;
     assert!(tracker_reponse.is_ok(), "Tracker announce should succeed");
 
     let response = tracker_reponse.unwrap();
@@ -25,7 +26,6 @@ async fn test_peer_handshake() -> anyhow::Result<()> {
         "Should receive at least one peer"
     );
 
-    let peer_id = TrackerRequest::generate_peer_id();
     let info_hash = torrent.info_hash.unwrap();
 
     let mut successful_handshakes = false;

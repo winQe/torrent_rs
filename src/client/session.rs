@@ -103,9 +103,13 @@ impl TorrentSession {
         });
 
         // Announce to tracker and get peers
-        let tracker_response = TrackerRequest::announce(&self.torrent)
-            .await
-            .context("Failed to announce to tracker")?;
+        let tracker_response = TrackerRequest::announce(
+            &self.torrent,
+            self.peer_id.clone(),
+            self.config.listen_port,
+        )
+        .await
+        .context("Failed to announce to tracker")?;
 
         let peer_count = tracker_response.peer_addresses.0.len();
 

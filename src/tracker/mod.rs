@@ -47,19 +47,23 @@ pub struct TrackerRequest {
 }
 
 impl TrackerRequest {
-    fn build_request(torrent: &Torrent) -> anyhow::Result<Self> {
-        Ok(TrackerRequest {
-            peer_id: Self::generate_peer_id(),
-            port: 6889,
+    fn build_request(torrent: &Torrent, peer_id: String, port: u16) -> Self {
+        TrackerRequest {
+            peer_id,
+            port,
             uploaded: 0,
             downloaded: 0,
             left: torrent.length(),
             compact: 1,
-        })
+        }
     }
     #[instrument(skip(torrent))]
-    pub async fn announce(torrent: &Torrent) -> anyhow::Result<TrackerResponse> {
-        let request = Self::build_request(torrent).context("Failed to build request")?;
+    pub async fn announce(
+        torrent: &Torrent,
+        peer_id: String,
+        port: u16,
+    ) -> anyhow::Result<TrackerResponse> {
+        let request = Self::build_request(torrent, peer_id, port);
         let params = serde_urlencoded::to_string(&request)
             .context("Failed to encode tracker url params!")?;
         let info_hash_urlencoded = torrent
@@ -151,7 +155,8 @@ mod tests {
             info_hash: Some([0u8; 20]), // Mock 20-byte info hash
         };
 
-        let result = TrackerRequest::announce(&torrent).await;
+        let peer_id = TrackerRequest::generate_peer_id();
+        let result = TrackerRequest::announce(&torrent, peer_id, 6881).await;
 
         assert!(result.is_ok());
         let response = result.unwrap();
