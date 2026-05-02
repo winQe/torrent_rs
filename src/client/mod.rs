@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+
 
 mod config;
 mod peer_worker;

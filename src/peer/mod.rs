@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+
 use std::net::SocketAddrV4;
 
 mod address;

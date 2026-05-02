@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::message::Bitfield;
