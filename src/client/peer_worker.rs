@@ -137,10 +137,14 @@ impl PeerWorker {
             pm.remove_peer(bitfield);
         }
 
-        // Return any assigned piece to the pool
+        // Return any assigned piece to the pool and free its pending reservations
         if let Some(piece) = self.assigned_piece.take() {
-            let mut pm = self.state.piece_manager.write().await;
-            pm.mark_failed(piece);
+            {
+                let mut pm = self.state.piece_manager.write().await;
+                pm.mark_failed(piece);
+            }
+            let mut bm = self.state.block_manager.lock().await;
+            bm.release_pending(piece);
         }
 
         Ok(())
@@ -151,8 +155,13 @@ impl PeerWorker {
             PeerMessage::Choke => {
                 debug!("Peer {} choked us", self.peer.address());
                 self.peer.choke();
-                // Clear pending requests - they won't be fulfilled
+                // Choked requests will never be fulfilled; release the BlockManager
+                // reservations so we can re-request after unchoke (or another peer can).
                 self.pending_requests.clear();
+                if let Some(piece) = self.assigned_piece {
+                    let mut bm = self.state.block_manager.lock().await;
+                    bm.release_pending(piece);
+                }
             }
 
             PeerMessage::Unchoke => {

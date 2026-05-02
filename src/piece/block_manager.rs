@@ -18,7 +18,15 @@ impl BlockManager {
     pub fn init_piece(&mut self, piece_index: PieceIndex, piece_size: u32) {
         let num_blocks = piece_size.div_ceil(BLOCK_SIZE);
         self.piece_blocks
-            .insert(piece_index, vec![None; num_blocks as usize]);
+            .entry(piece_index)
+            .or_insert_with(|| vec![None; num_blocks as usize]);
+    }
+
+    /// Drop pending-block reservations for a piece so other workers can re-request them.
+    /// Stored blocks are preserved.
+    pub fn release_pending(&mut self, piece_index: PieceIndex) {
+        self.pending_blocks
+            .retain(|info, _| info.piece_index != piece_index);
     }
 
     pub fn next_block(&mut self, piece_index: PieceIndex, piece_size: u32) -> Option<BlockInfo> {
@@ -160,17 +168,38 @@ mod tests {
     }
 
     #[test]
-    fn test_init_piece_overwrites_existing() {
+    fn test_init_piece_is_idempotent() {
         let mut manager = BlockManager::new();
         let piece_index = 0;
 
-        // Initialize with one size
         manager.init_piece(piece_index, BLOCK_SIZE);
-        assert_eq!(manager.piece_blocks.get(&piece_index).unwrap().len(), 1);
+        let block = manager.next_block(piece_index, BLOCK_SIZE).unwrap();
+        manager.store_block(block, vec![1u8; BLOCK_SIZE as usize]);
+        assert!(manager.is_piece_complete(piece_index));
 
-        // Initialize with different size - should overwrite
-        manager.init_piece(piece_index, BLOCK_SIZE * 3);
-        assert_eq!(manager.piece_blocks.get(&piece_index).unwrap().len(), 3);
+        manager.init_piece(piece_index, BLOCK_SIZE);
+        assert!(
+            manager.is_piece_complete(piece_index),
+            "init_piece on an existing piece should not wipe stored blocks"
+        );
+    }
+
+    #[test]
+    fn test_release_pending_clears_only_target_piece() {
+        let mut manager = BlockManager::new();
+        manager.init_piece(0, BLOCK_SIZE);
+        manager.init_piece(1, BLOCK_SIZE);
+        let block_a = manager.next_block(0, BLOCK_SIZE).unwrap();
+        let block_b = manager.next_block(1, BLOCK_SIZE).unwrap();
+
+        manager.release_pending(0);
+
+        assert!(!manager.pending_blocks.contains_key(&block_a));
+        assert!(manager.pending_blocks.contains_key(&block_b));
+
+        // After release, the same block can be reissued
+        let again = manager.next_block(0, BLOCK_SIZE).unwrap();
+        assert_eq!(again, block_a);
     }
 
     #[test]
