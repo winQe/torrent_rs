@@ -178,8 +178,8 @@ impl Encoder<PeerMessage> for MessageCodec {
                 dst.put_u32(length);
             }
             PeerMessage::Port(port) => {
-                dst.put_u32(6); // Length
-                dst.put_u8(9); // Message ID
+                dst.put_u32(3);
+                dst.put_u8(9);
                 dst.put_u16(port);
             }
         }
