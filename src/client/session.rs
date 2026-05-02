@@ -227,10 +227,12 @@ impl TorrentSession {
             }
         }
 
-        // Signal shutdown
-        let _ = shutdown_tx.send(());
+        // Aborting peers drops their piece_tx clones; combined with the early drop above,
+        // the writer's channel will naturally close once it has drained any queued pieces.
+        // We deliberately do NOT send shutdown here — that would abandon completed pieces
+        // still waiting to be hashed and written.
+        peer_handles.abort_all();
 
-        // Wait for writer task
         let _ = writer_handle.await;
 
         // Cancel progress task
@@ -432,10 +434,8 @@ async fn piece_writer_task(
         tokio::select! {
             biased;
 
-            _ = shutdown_rx.recv() => {
-                break;
-            }
-
+            // Drain queued pieces first so a shutdown signal does not abandon
+            // pieces that have already been hashed and assembled.
             piece = rx.recv() => {
                 match piece {
                     Some(completed) => {
@@ -494,6 +494,11 @@ async fn piece_writer_task(
                         break;
                     }
                 }
+            }
+
+            // Only honor shutdown when there is nothing to drain.
+            _ = shutdown_rx.recv() => {
+                break;
             }
         }
     }
