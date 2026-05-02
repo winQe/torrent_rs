@@ -1604,12 +1604,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "thread-rng"
-version = "0.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50c7d77c85f49dd5bbc576e46b8c8366ed9a1c0c73265727e0c7d58ecce4c70d"
-
-[[package]]
 name = "thread_local"
 version = "1.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1713,7 +1707,6 @@ dependencies = [
  "serde_urlencoded",
  "sha1",
  "thiserror",
- "thread-rng",
  "tokio",
  "tokio-util",
  "tracing",
