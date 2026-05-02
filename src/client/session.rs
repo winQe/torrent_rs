@@ -14,6 +14,7 @@ use crate::tracker::TrackerRequest;
 
 use super::config::ClientConfig;
 use super::peer_worker::PeerWorker;
+use super::resume::{self, ResumeData};
 use super::state::{CompletedPiece, SharedState};
 
 /// Main session coordinator for downloading a torrent.
@@ -66,19 +67,37 @@ impl TorrentSession {
                 .context("Failed to create disk manager")?;
         let disk_manager = Arc::new(tokio::sync::Mutex::new(disk_manager));
 
+        let piece_hashes = self.torrent.info.pieces.0.clone();
+        let resume_path = resume::resume_path(&self.config.download_path, &info_hash);
+
+        let resumed_count = resume_existing_pieces(
+            &resume_path,
+            &info_hash,
+            &piece_hashes,
+            piece_size,
+            total_length,
+            total_pieces,
+            &state,
+            &disk_manager,
+        )
+        .await;
+
         // Spawn piece writer/verifier task
         let writer_state = Arc::clone(&state);
         let writer_disk = Arc::clone(&disk_manager);
-        let piece_hashes = self.torrent.info.pieces.0.clone();
+        let writer_hashes = piece_hashes.clone();
         let writer_shutdown = shutdown_tx.subscribe();
+        let writer_resume_path = resume_path.clone();
 
         let writer_handle = tokio::spawn(async move {
             piece_writer_task(
                 piece_rx,
-                piece_hashes,
+                writer_hashes,
                 writer_state,
                 writer_disk,
                 writer_shutdown,
+                writer_resume_path,
+                info_hash,
             )
             .await
         });
@@ -99,6 +118,9 @@ impl TorrentSession {
         );
         println!("Tracker: {}", self.torrent.announce);
         println!("Peers:   {} found", peer_count);
+        if resumed_count > 0 {
+            println!("Resumed: {}/{} pieces", resumed_count, total_pieces);
+        }
         println!();
 
         if peer_count == 0 {
@@ -243,6 +265,79 @@ impl TorrentSession {
     }
 }
 
+/// Verify pieces claimed in the resume file against bytes on disk and mark valid ones as completed.
+/// Returns the number of pieces successfully resumed.
+#[allow(clippy::too_many_arguments)]
+async fn resume_existing_pieces(
+    resume_path: &std::path::Path,
+    info_hash: &[u8; 20],
+    piece_hashes: &[[u8; 20]],
+    piece_size: u32,
+    total_length: u64,
+    total_pieces: u32,
+    state: &Arc<SharedState>,
+    disk: &Arc<tokio::sync::Mutex<DiskFileManager>>,
+) -> u32 {
+    let resume_data = match resume::load(resume_path) {
+        Ok(Some(data)) => data,
+        Ok(None) => return 0,
+        Err(e) => {
+            warn!("Ignoring corrupt resume file: {}", e);
+            return 0;
+        }
+    };
+
+    if &resume_data.info_hash != info_hash {
+        warn!("Resume file info_hash mismatch, ignoring");
+        return 0;
+    }
+
+    let mut verified = 0u32;
+    for &piece_idx in &resume_data.completed_pieces {
+        if piece_idx >= total_pieces || piece_idx as usize >= piece_hashes.len() {
+            continue;
+        }
+
+        let length = piece_length(piece_idx, piece_size, total_length, total_pieces);
+
+        let data = {
+            let mut disk = disk.lock().await;
+            match disk.read_piece(piece_idx, length) {
+                Ok(d) => d,
+                Err(_) => continue,
+            }
+        };
+
+        if !verify_piece(&data, &piece_hashes[piece_idx as usize]) {
+            continue;
+        }
+
+        {
+            let mut pm = state.piece_manager.write().await;
+            pm.mark_completed(piece_idx);
+        }
+        state.completed_pieces.write().await.insert(piece_idx);
+        state.stats.add_downloaded(length as u64);
+        state.stats.increment_pieces();
+        verified += 1;
+    }
+
+    verified
+}
+
+fn piece_length(piece_index: u32, piece_size: u32, total_length: u64, total_pieces: u32) -> u32 {
+    if piece_index == total_pieces - 1 {
+        let remainder = total_length % piece_size as u64;
+        if remainder == 0 {
+            piece_size
+        } else {
+            remainder as u32
+        }
+    } else {
+        piece_size
+    }
+}
+
 /// Format byte count as human-readable string (e.g. "631.0 MB").
 fn format_bytes(bytes: u64) -> String {
     const KB: u64 = 1024;
@@ -267,6 +362,8 @@ async fn piece_writer_task(
     state: Arc<SharedState>,
     disk: Arc<tokio::sync::Mutex<DiskFileManager>>,
     mut shutdown_rx: broadcast::Receiver<()>,
+    resume_path: std::path::PathBuf,
+    info_hash: [u8; 20],
 ) {
     loop {
         tokio::select! {
@@ -311,11 +408,21 @@ async fn piece_writer_task(
                             let mut pm = state.piece_manager.write().await;
                             pm.mark_completed(completed.index);
                         }
-                        {
+                        let snapshot: Vec<_> = {
                             let mut completed_set = state.completed_pieces.write().await;
                             completed_set.insert(completed.index);
-                        }
+                            completed_set.iter().copied().collect()
+                        };
                         state.stats.increment_pieces();
+
+                        let resume_data = ResumeData {
+                            info_hash,
+                            completed_pieces: snapshot,
+                            downloaded_bytes: state.stats.downloaded_bytes(),
+                        };
+                        if let Err(e) = resume::save(&resume_path, &resume_data) {
+                            warn!("Failed to save resume data: {}", e);
+                        }
 
                         info!("Piece {} verified and written to disk", completed.index);
                     }

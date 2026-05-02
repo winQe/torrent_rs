@@ -2,6 +2,7 @@
 
 mod config;
 mod peer_worker;
+mod resume;
 mod session;
 mod state;
 

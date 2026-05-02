@@ -7,6 +7,7 @@ use crate::message::PieceIndex;
 pub trait FileManager: Sized {
     fn new(base_path: PathBuf, files: Vec<(String, u64)>, piece_size: u32) -> anyhow::Result<Self>;
     fn write_piece(&mut self, piece_index: PieceIndex, data: &[u8]) -> anyhow::Result<()>;
+    fn read_piece(&mut self, piece_index: PieceIndex, length: u32) -> anyhow::Result<Vec<u8>>;
 }
 
 pub mod disk;

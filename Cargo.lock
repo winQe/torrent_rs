@@ -1709,6 +1709,7 @@ dependencies = [
  "serde_bencode",
  "serde_bytes",
  "serde_derive",
+ "serde_json",
  "serde_urlencoded",
  "sha1",
  "thiserror",

@@ -23,6 +23,7 @@ futures = "0.3.31"
 tokio-util = "0.7.13"
 clap = { version = "4", features = ["derive"] }
 indicatif = "0.17"
+serde_json = "1"
 
 [dev-dependencies]
 mockito = "1.2.0"
