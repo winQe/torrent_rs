@@ -52,14 +52,17 @@ impl PieceManager {
         }
     }
 
-    /// Select next piece to download using rarest-first strategy
-    pub fn next_piece(&mut self) -> Option<PieceIndex> {
-        // Find first available piece that's not completed or pending
+    /// Select the next piece this peer can serve, using rarest-first across the swarm.
+    /// Returns None if the peer has no piece we still need.
+    pub fn next_piece_for(&mut self, peer_bitfield: &Bitfield) -> Option<PieceIndex> {
         let candidate = self
             .availability_queue
             .iter()
             .find(|&&(count, piece)| {
-                count > 0 && !self.completed.contains(&piece) && !self.pending.contains(&piece)
+                count > 0
+                    && !self.completed.contains(&piece)
+                    && !self.pending.contains(&piece)
+                    && peer_bitfield.has_piece(piece as usize)
             })
             .copied();
 
@@ -117,5 +120,41 @@ impl PieceManager {
     /// Get total number of pieces
     pub fn total_pieces(&self) -> u32 {
         self.total_pieces
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_next_piece_for_returns_only_what_peer_has() {
+        let mut pm = PieceManager::new(3, 16384);
+        // Seed availability so all three pieces have count >= 1
+        pm.add_peer(&Bitfield::from_bytes(vec![0b1110_0000]));
+
+        // Asking peer only has piece 1
+        let asking = Bitfield::from_bytes(vec![0b0100_0000]);
+        assert_eq!(pm.next_piece_for(&asking), Some(1));
+    }
+
+    #[test]
+    fn test_next_piece_for_returns_none_when_peer_has_nothing_useful() {
+        let mut pm = PieceManager::new(3, 16384);
+        pm.add_peer(&Bitfield::from_bytes(vec![0b1110_0000]));
+
+        let empty = Bitfield::from_bytes(vec![0b0000_0000]);
+        assert_eq!(pm.next_piece_for(&empty), None);
+    }
+
+    #[test]
+    fn test_next_piece_for_skips_pending_pieces_even_if_peer_has_them() {
+        let mut pm = PieceManager::new(3, 16384);
+        pm.add_peer(&Bitfield::from_bytes(vec![0b1110_0000]));
+
+        let bf = Bitfield::from_bytes(vec![0b1110_0000]);
+        let first = pm.next_piece_for(&bf).unwrap();
+        let second = pm.next_piece_for(&bf).unwrap();
+        assert_ne!(first, second, "concurrent peers must not be assigned the same piece");
     }
 }

@@ -264,8 +264,11 @@ impl PeerWorker {
         while self.pending_requests.len() < self.config.max_requests_per_peer {
             // Get or assign a piece to work on
             if self.assigned_piece.is_none() {
+                let Some(peer_bitfield) = self.peer.bitfield() else {
+                    return Ok(());
+                };
                 let mut pm = self.state.piece_manager.write().await;
-                if let Some(piece) = pm.next_piece() {
+                if let Some(piece) = pm.next_piece_for(peer_bitfield) {
                     self.assigned_piece = Some(piece);
 
                     // Initialize piece in block manager
