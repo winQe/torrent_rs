@@ -293,7 +293,7 @@ async fn resume_existing_pieces(
     }
 
     let mut verified = 0u32;
-    for &piece_idx in &resume_data.completed_pieces {
+    for piece_idx in resume_data.completed_pieces() {
         if piece_idx >= total_pieces || piece_idx as usize >= piece_hashes.len() {
             continue;
         }
@@ -408,18 +408,18 @@ async fn piece_writer_task(
                             let mut pm = state.piece_manager.write().await;
                             pm.mark_completed(completed.index);
                         }
-                        let snapshot: Vec<_> = {
+                        let resume_data = {
                             let mut completed_set = state.completed_pieces.write().await;
                             completed_set.insert(completed.index);
-                            completed_set.iter().copied().collect()
+                            ResumeData::from_completed(
+                                info_hash,
+                                &completed_set,
+                                state.stats.total_pieces(),
+                                state.stats.downloaded_bytes(),
+                            )
                         };
                         state.stats.increment_pieces();
 
-                        let resume_data = ResumeData {
-                            info_hash,
-                            completed_pieces: snapshot,
-                            downloaded_bytes: state.stats.downloaded_bytes(),
-                        };
                         if let Err(e) = resume::save(&resume_path, &resume_data) {
                             warn!("Failed to save resume data: {}", e);
                         }
