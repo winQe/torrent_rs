@@ -54,8 +54,8 @@ pub fn resume_path(download_dir: &Path, info_hash: &[u8; 20]) -> PathBuf {
     download_dir.join(format!(".{}.resume", hex::encode(info_hash)))
 }
 
-pub fn load(path: &Path) -> Result<Option<ResumeData>> {
-    match std::fs::read(path) {
+pub async fn load(path: &Path) -> Result<Option<ResumeData>> {
+    match tokio::fs::read(path).await {
         Ok(bytes) => {
             let data: ResumeData = serde_json::from_slice(&bytes)
                 .with_context(|| format!("Failed to parse resume file: {}", path.display()))?;
@@ -66,12 +66,14 @@ pub fn load(path: &Path) -> Result<Option<ResumeData>> {
     }
 }
 
-pub fn save(path: &Path, data: &ResumeData) -> Result<()> {
+pub async fn save(path: &Path, data: &ResumeData) -> Result<()> {
     let tmp = path.with_extension("resume.tmp");
     let bytes = serde_json::to_vec(data).context("Failed to serialize resume data")?;
-    std::fs::write(&tmp, bytes)
+    tokio::fs::write(&tmp, bytes)
+        .await
         .with_context(|| format!("Failed to write resume tmp file: {}", tmp.display()))?;
-    std::fs::rename(&tmp, path)
+    tokio::fs::rename(&tmp, path)
+        .await
         .with_context(|| format!("Failed to rename resume file to: {}", path.display()))?;
     Ok(())
 }

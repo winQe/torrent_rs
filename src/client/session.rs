@@ -278,7 +278,7 @@ async fn resume_existing_pieces(
     state: &Arc<SharedState>,
     disk: &Arc<tokio::sync::Mutex<DiskFileManager>>,
 ) -> u32 {
-    let resume_data = match resume::load(resume_path) {
+    let resume_data = match resume::load(resume_path).await {
         Ok(Some(data)) => data,
         Ok(None) => return 0,
         Err(e) => {
@@ -420,7 +420,7 @@ async fn piece_writer_task(
                         };
                         state.stats.increment_pieces();
 
-                        if let Err(e) = resume::save(&resume_path, &resume_data) {
+                        if let Err(e) = resume::save(&resume_path, &resume_data).await {
                             warn!("Failed to save resume data: {}", e);
                         }
 
