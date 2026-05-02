@@ -218,6 +218,7 @@ impl PeerWorker {
             offset: begin,
             length: block.len() as u32,
         };
+        let block_len = block.len() as u64;
 
         // Remove from pending requests
         self.pending_requests
@@ -226,7 +227,7 @@ impl PeerWorker {
         // Store the block
         {
             let mut bm = self.state.block_manager.lock().await;
-            bm.store_block(block_info, block.clone());
+            bm.store_block(block_info, block);
 
             // Check if piece is complete
             if bm.is_piece_complete(index) {
@@ -250,7 +251,7 @@ impl PeerWorker {
         }
 
         // Update download stats
-        self.state.stats.add_downloaded(block.len() as u64);
+        self.state.stats.add_downloaded(block_len);
 
         // Request more blocks to keep pipeline full
         if !self.peer.is_choked() {
