@@ -37,6 +37,7 @@ pub struct PeerWorker {
 }
 
 impl PeerWorker {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         addr: SocketAddrV4,
         info_hash: [u8; 20],
