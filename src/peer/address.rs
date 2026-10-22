@@ -19,17 +19,15 @@ impl<'de> Visitor<'de> for PeerAddressesVisitor {
     where
         E: de::Error,
     {
-        if v.len() % 6 != 0 {
+        if !v.len().is_multiple_of(6) {
             return Err(E::custom(format!("length is {}", v.len())));
         }
-        // TODO: use array_chunks when stable; then we can also pattern-match in closure args
+        let (chunks, _) = v.as_chunks::<6>();
         Ok(PeerAddresses(
-            v.chunks_exact(6)
-                .map(|slice_6| {
-                    SocketAddrV4::new(
-                        Ipv4Addr::new(slice_6[0], slice_6[1], slice_6[2], slice_6[3]),
-                        u16::from_be_bytes([slice_6[4], slice_6[5]]),
-                    )
+            chunks
+                .iter()
+                .map(|&[a, b, c, d, p1, p2]| {
+                    SocketAddrV4::new(Ipv4Addr::new(a, b, c, d), u16::from_be_bytes([p1, p2]))
                 })
                 .collect(),
         ))

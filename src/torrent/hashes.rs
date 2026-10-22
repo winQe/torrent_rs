@@ -17,15 +17,11 @@ impl<'de> Visitor<'de> for HashesVisitor {
     where
         E: de::Error,
     {
-        if v.len() % 20 != 0 {
+        if !v.len().is_multiple_of(20) {
             return Err(E::custom(format!("length is {}", v.len())));
         }
-        // TODO: use array_chunks when stable
-        Ok(Hashes(
-            v.chunks_exact(20)
-                .map(|slice_20| slice_20.try_into().expect("guaranteed to be length 20"))
-                .collect(),
-        ))
+        let (chunks, _) = v.as_chunks::<20>();
+        Ok(Hashes(chunks.to_vec()))
     }
 }
 
