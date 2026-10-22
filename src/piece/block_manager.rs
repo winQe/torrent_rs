@@ -6,6 +6,12 @@ pub struct BlockManager {
     pending_blocks: HashMap<BlockInfo, std::time::Instant>,
 }
 
+impl Default for BlockManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BlockManager {
     pub fn new() -> Self {
         Self {
@@ -41,9 +47,10 @@ impl BlockManager {
                     length,
                 };
 
-                if !self.pending_blocks.contains_key(&block_info) {
-                    self.pending_blocks
-                        .insert(block_info, std::time::Instant::now());
+                if let std::collections::hash_map::Entry::Vacant(e) =
+                    self.pending_blocks.entry(block_info)
+                {
+                    e.insert(std::time::Instant::now());
                     return Some(block_info);
                 }
             }
@@ -297,7 +304,7 @@ mod tests {
         let block_info = manager.next_block(piece_index, piece_size).unwrap();
 
         let test_data = create_test_block(BLOCK_SIZE as usize);
-        manager.store_block(block_info.clone(), test_data.clone());
+        manager.store_block(block_info, test_data.clone());
 
         // Block should no longer be pending
         assert!(!manager.pending_blocks.contains_key(&block_info));
@@ -400,7 +407,7 @@ mod tests {
         assert!(manager.pending_blocks.contains_key(&block_info));
 
         let test_data = create_test_block(BLOCK_SIZE as usize);
-        manager.store_block(block_info.clone(), test_data);
+        manager.store_block(block_info, test_data);
 
         // Should be removed from pending
         assert!(!manager.pending_blocks.contains_key(&block_info));
@@ -438,7 +445,7 @@ mod tests {
         while let Some(block_info) = manager.next_block(piece_index, piece_size) {
             let data = create_test_block(block_info.length as usize);
             test_data.push(data.clone());
-            block_infos.push(block_info.clone());
+            block_infos.push(block_info);
             manager.store_block(block_info, data);
         }
 
