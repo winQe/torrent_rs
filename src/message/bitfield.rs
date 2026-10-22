@@ -37,11 +37,15 @@ impl Bitfield {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
     pub fn len(&self) -> usize {
         self.data.len() * 8
     }
 
-    pub fn iter(&self) -> BitfieldIterator {
+    pub fn iter(&self) -> BitfieldIterator<'_> {
         BitfieldIterator {
             bitfield: self,
             index: 0,
