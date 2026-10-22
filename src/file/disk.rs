@@ -59,12 +59,8 @@ impl FileManager for DiskFileManager {
         for (file_idx, (_, file_size)) in self.file_info.iter().enumerate() {
             if current_offset < file_offset + file_size {
                 // This file contains part of our piece
-                let file_start = if current_offset > file_offset {
-                    current_offset - file_offset
-                } else {
-                    // Just at the start of the file
-                    0
-                };
+                // Zero when the piece starts at or before this file
+                let file_start = current_offset.saturating_sub(file_offset);
 
                 // How many bytes of data we should write to this particular file
                 let bytes_in_this_file =
