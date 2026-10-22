@@ -20,8 +20,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Installs the toolchain pinned in rust-toolchain.toml
-      - run: rustup toolchain install
+      # Installs the toolchain pinned in rust-toolchain.toml and removes the
+      # runner's preinstalled ones, which rust-cache would otherwise hash into
+      # its key (that changes whenever the runner image's stable does)
+      - run: |
+          rustup toolchain install
+          active=$(rustup show active-toolchain | cut -d' ' -f1)
+          rustup toolchain list | cut -d' ' -f1 | grep -vx "$active" | xargs -r rustup toolchain uninstall
 
       - uses: Swatinem/rust-cache@v2
 
@@ -36,7 +41,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - run: rustup toolchain install
+      # Installs the toolchain pinned in rust-toolchain.toml and removes the
+      # runner's preinstalled ones, which rust-cache would otherwise hash into
+      # its key (that changes whenever the runner image's stable does)
+      - run: |
+          rustup toolchain install
+          active=$(rustup show active-toolchain | cut -d' ' -f1)
+          rustup toolchain list | cut -d' ' -f1 | grep -vx "$active" | xargs -r rustup toolchain uninstall
 
       - uses: Swatinem/rust-cache@v2
 
