@@ -54,6 +54,22 @@ pub struct BitfieldIterator<'a> {
     index: PieceIndex,
 }
 
+impl<'a> Iterator for BitfieldIterator<'a> {
+    type Item = PieceIndex;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.index < self.bitfield.len() as u32 {
+            let current = self.index;
+            self.index += 1;
+
+            if self.bitfield.has_piece(current as usize) {
+                return Some(current as PieceIndex);
+            }
+        }
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,21 +99,5 @@ mod tests {
         for i in 0..8 {
             assert!(!bf.has_piece(i));
         }
-    }
-}
-
-impl<'a> Iterator for BitfieldIterator<'a> {
-    type Item = PieceIndex;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while self.index < self.bitfield.len() as u32 {
-            let current = self.index;
-            self.index += 1;
-
-            if self.bitfield.has_piece(current as usize) {
-                return Some(current as PieceIndex);
-            }
-        }
-        None
     }
 }
