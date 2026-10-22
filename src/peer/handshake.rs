@@ -36,7 +36,7 @@ impl Peer {
     //TODO: retry mechanism with exponential backoff
     #[instrument(skip(self))]
     pub async fn handshake(&self) -> anyhow::Result<tokio::net::TcpStream> {
-        if self.peer_id.as_bytes().len() != 20 {
+        if self.peer_id.len() != 20 {
             bail!("Peer ID must be exactly 20 bytes long");
         }
 
