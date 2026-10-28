@@ -14,6 +14,11 @@ use crate::piece::BlockInfo;
 use super::config::ClientConfig;
 use super::state::{CompletedPiece, SharedState};
 
+/// Connection attempts per peer before giving up.
+const CONNECT_ATTEMPTS: u32 = 3;
+/// Delay before the first connection retry; doubles after each failure.
+const CONNECT_BACKOFF_BASE: std::time::Duration = std::time::Duration::from_secs(1);
+
 /// Handles communication with a single peer.
 /// Each peer connection runs as its own async task.
 pub struct PeerWorker {
@@ -70,7 +75,11 @@ impl PeerWorker {
         debug!("Connecting to peer {}", addr);
 
         self.peer
-            .connect(self.total_pieces as usize)
+            .connect_with_retry(
+                self.total_pieces as usize,
+                CONNECT_ATTEMPTS,
+                CONNECT_BACKOFF_BASE,
+            )
             .await
             .with_context(|| format!("Failed to connect to peer {}", addr))?;
 

@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+use std::net::SocketAddrV4;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -10,12 +13,15 @@ use tracing::{error, info, warn};
 use crate::file::{DiskFileManager, FileManager};
 use crate::piece::verify_piece;
 use crate::torrent::{Keys, Torrent};
-use crate::tracker::TrackerRequest;
+use crate::tracker::{TrackerRequest, TrackerResponse};
 
 use super::config::ClientConfig;
 use super::peer_worker::PeerWorker;
 use super::resume::{self, ResumeData};
 use super::state::{CompletedPiece, SharedState};
+
+/// Lower bound on the tracker re-announce interval, in case a tracker asks for a very short one.
+const MIN_REANNOUNCE_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Main session coordinator for downloading a torrent.
 pub struct TorrentSession {
@@ -105,10 +111,12 @@ impl TorrentSession {
         });
 
         // Announce to tracker and get peers
-        let tracker_response =
-            TrackerRequest::announce(&self.torrent, self.peer_id.clone(), self.config.listen_port)
-                .await
-                .context("Failed to announce to tracker")?;
+        let tracker_response = self
+            .announce()
+            .await
+            .context("Failed to announce to tracker")?;
+        let reannounce_interval =
+            Duration::from_secs(tracker_response.interval as u64).max(MIN_REANNOUNCE_INTERVAL);
 
         let peer_count = tracker_response.peer_addresses.0.len();
 
@@ -139,35 +147,54 @@ impl TorrentSession {
                 .progress_chars("##-"),
         );
 
-        // Spawn peer workers with concurrency limit
+        // Spawn peer workers with concurrency limit. Workers wait for a permit
+        // inside their task so the session loop below is never blocked.
         let semaphore = Arc::new(Semaphore::new(self.config.max_peers));
         let mut peer_handles = JoinSet::new();
+        // Address of each running (or waiting) worker, so a re-announce only adds new peers.
+        let mut active_peers: HashMap<tokio::task::Id, SocketAddrV4> = HashMap::new();
 
-        for addr in tracker_response.peer_addresses.iter() {
-            let permit = semaphore.clone().acquire_owned().await?;
+        // Spawns a worker for each address that has none yet; returns how many were spawned.
+        let spawn_new_peers = |response: &TrackerResponse,
+                               peer_handles: &mut JoinSet<Result<()>>,
+                               active_peers: &mut HashMap<tokio::task::Id, SocketAddrV4>|
+         -> usize {
+            let mut spawned = 0;
+            for addr in response.peer_addresses.iter() {
+                if active_peers.values().any(|a| a == addr) {
+                    continue;
+                }
 
-            let worker = PeerWorker::new(
-                *addr,
-                info_hash,
-                self.peer_id.clone(),
-                Arc::clone(&state),
-                self.config.clone(),
-                piece_tx.clone(),
-                shutdown_tx.subscribe(),
-                total_length,
-                piece_size,
-                total_pieces,
-            );
+                let worker = PeerWorker::new(
+                    *addr,
+                    info_hash,
+                    self.peer_id.clone(),
+                    Arc::clone(&state),
+                    self.config.clone(),
+                    piece_tx.clone(),
+                    shutdown_tx.subscribe(),
+                    total_length,
+                    piece_size,
+                    total_pieces,
+                );
+                let semaphore = Arc::clone(&semaphore);
 
-            peer_handles.spawn(async move {
-                let result = worker.run().await;
-                drop(permit);
-                result
-            });
-        }
+                let handle = peer_handles.spawn(async move {
+                    let _permit = semaphore.acquire_owned().await?;
+                    worker.run().await
+                });
+                active_peers.insert(handle.id(), *addr);
+                spawned += 1;
+            }
+            spawned
+        };
 
-        // Drop our sender so writer task can detect completion
-        drop(piece_tx);
+        spawn_new_peers(&tracker_response, &mut peer_handles, &mut active_peers);
+
+        let mut reannounce = tokio::time::interval_at(
+            tokio::time::Instant::now() + reannounce_interval,
+            reannounce_interval,
+        );
 
         // Progress update task
         let progress_state = Arc::clone(&state);
@@ -194,20 +221,50 @@ impl TorrentSession {
             }
         });
 
-        // Wait for completion, all peers to disconnect, or Ctrl+C
+        // Wait for completion, all peers to disconnect (and no new ones from the tracker), or Ctrl+C
         loop {
             tokio::select! {
-                result = peer_handles.join_next() => {
+                result = peer_handles.join_next_with_id() => {
                     match result {
-                        Some(Err(e)) => warn!("Peer task panicked: {}", e),
-                        Some(Ok(_)) => {}
-                        None => break, // all peers done
+                        Some(Err(e)) => {
+                            active_peers.remove(&e.id());
+                            warn!("Peer task panicked: {}", e);
+                        }
+                        Some(Ok((id, _))) => {
+                            active_peers.remove(&id);
+                        }
+                        None => {
+                            // All peers are gone; ask the tracker for more before giving up.
+                            let spawned = match self.announce().await {
+                                Ok(response) => {
+                                    spawn_new_peers(&response, &mut peer_handles, &mut active_peers)
+                                }
+                                Err(e) => {
+                                    warn!("Tracker re-announce failed: {:#}", e);
+                                    0
+                                }
+                            };
+                            if spawned == 0 {
+                                break;
+                            }
+                            reannounce.reset();
+                        }
                     }
 
                     // Check if download is complete
                     let pm = state.piece_manager.read().await;
                     if pm.is_complete() {
                         break;
+                    }
+                }
+                _ = reannounce.tick() => {
+                    match self.announce().await {
+                        Ok(response) => {
+                            let spawned =
+                                spawn_new_peers(&response, &mut peer_handles, &mut active_peers);
+                            info!("Re-announced to tracker, {} new peers", spawned);
+                        }
+                        Err(e) => warn!("Tracker re-announce failed: {:#}", e),
                     }
                 }
                 _ = tokio::signal::ctrl_c() => {
@@ -230,11 +287,12 @@ impl TorrentSession {
             }
         }
 
-        // Aborting peers drops their piece_tx clones; combined with the early drop above,
+        // Aborting peers drops their piece_tx clones; together with dropping our own sender,
         // the writer's channel will naturally close once it has drained any queued pieces.
         // We deliberately do NOT send shutdown here — that would abandon completed pieces
         // still waiting to be hashed and written.
         peer_handles.abort_all();
+        drop(piece_tx);
 
         let _ = writer_handle.await;
 
@@ -251,6 +309,10 @@ impl TorrentSession {
         );
 
         Ok(())
+    }
+
+    async fn announce(&self) -> Result<TrackerResponse> {
+        TrackerRequest::announce(&self.torrent, self.peer_id.clone(), self.config.listen_port).await
     }
 
     /// Extract file information from torrent for disk manager.

@@ -7,6 +7,8 @@ use crate::{
 };
 use futures::SinkExt;
 use futures::StreamExt;
+use std::time::Duration;
+use tracing::debug;
 
 impl Peer {
     /// Establish the TCP connection and complete the BitTorrent handshake.
@@ -18,6 +20,31 @@ impl Peer {
         self.tcp_stream = Some(frame);
         self.bitfield = Some(Bitfield::empty(total_pieces));
         Ok(())
+    }
+
+    /// Like `connect`, but retries failed attempts with exponential backoff
+    /// (`base_delay`, then twice that, and so on) up to `attempts` tries in total.
+    pub async fn connect_with_retry(
+        &mut self,
+        total_pieces: usize,
+        attempts: u32,
+        base_delay: Duration,
+    ) -> anyhow::Result<()> {
+        let mut delay = base_delay;
+        for attempt in 1..attempts {
+            match self.connect(total_pieces).await {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    debug!(
+                        "Connect to {} failed (attempt {}/{}): {:#}, retrying in {:?}",
+                        self.addr, attempt, attempts, e, delay
+                    );
+                    tokio::time::sleep(delay).await;
+                    delay *= 2;
+                }
+            }
+        }
+        self.connect(total_pieces).await
     }
 
     pub async fn request_block(&mut self, block_info: BlockInfo) -> anyhow::Result<()> {
@@ -86,5 +113,32 @@ impl Peer {
             .context("Failed to send message")?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv4Addr, SocketAddrV4};
+    use std::time::Instant;
+
+    #[tokio::test]
+    async fn connect_with_retry_backs_off_then_fails() {
+        // Bind then drop a listener to get a port that refuses connections.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, port);
+        let mut peer = Peer::new(addr, [0; 20], "-TR0001-aaaaaaaaaaaa".to_string());
+
+        let start = Instant::now();
+        let result = peer
+            .connect_with_retry(1, 3, Duration::from_millis(20))
+            .await;
+
+        assert!(result.is_err());
+        // Two sleeps between three attempts: 20ms + 40ms.
+        assert!(start.elapsed() >= Duration::from_millis(60));
     }
 }
