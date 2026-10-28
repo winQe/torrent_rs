@@ -33,7 +33,6 @@ impl HandshakeMessage {
 }
 
 impl Peer {
-    //TODO: retry mechanism with exponential backoff
     #[instrument(skip(self))]
     pub async fn handshake(&self) -> anyhow::Result<tokio::net::TcpStream> {
         if self.peer_id.len() != 20 {

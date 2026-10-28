@@ -7,6 +7,8 @@ use crate::{
 };
 use futures::SinkExt;
 use futures::StreamExt;
+use std::time::Duration;
+use tracing::debug;
 
 impl Peer {
     /// Establish the TCP connection and complete the BitTorrent handshake.
@@ -18,6 +20,31 @@ impl Peer {
         self.tcp_stream = Some(frame);
         self.bitfield = Some(Bitfield::empty(total_pieces));
         Ok(())
+    }
+
+    /// Like `connect`, but retries failed attempts with exponential backoff
+    /// (`base_delay`, then twice that, and so on) up to `attempts` tries in total.
+    pub async fn connect_with_retry(
+        &mut self,
+        total_pieces: usize,
+        attempts: u32,
+        base_delay: Duration,
+    ) -> anyhow::Result<()> {
+        let mut delay = base_delay;
+        for attempt in 1..attempts {
+            match self.connect(total_pieces).await {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    debug!(
+                        "Connect to {} failed (attempt {}/{}): {:#}, retrying in {:?}",
+                        self.addr, attempt, attempts, e, delay
+                    );
+                    tokio::time::sleep(delay).await;
+                    delay *= 2;
+                }
+            }
+        }
+        self.connect(total_pieces).await
     }
 
     pub async fn request_block(&mut self, block_info: BlockInfo) -> anyhow::Result<()> {
