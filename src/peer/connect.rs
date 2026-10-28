@@ -115,3 +115,30 @@ impl Peer {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv4Addr, SocketAddrV4};
+    use std::time::Instant;
+
+    #[tokio::test]
+    async fn connect_with_retry_backs_off_then_fails() {
+        // Bind then drop a listener to get a port that refuses connections.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, port);
+        let mut peer = Peer::new(addr, [0; 20], "-TR0001-aaaaaaaaaaaa".to_string());
+
+        let start = Instant::now();
+        let result = peer
+            .connect_with_retry(1, 3, Duration::from_millis(20))
+            .await;
+
+        assert!(result.is_err());
+        // Two sleeps between three attempts: 20ms + 40ms.
+        assert!(start.elapsed() >= Duration::from_millis(60));
+    }
+}
